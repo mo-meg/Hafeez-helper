@@ -1,0 +1,11 @@
+{
+  "name": "Hafeez Helfer",
+  "short_name": "Hafeez",
+  "description": "Personal Quran memorization (Hifz) revision: mark mistakes, revise them with repeated audio in Quran order.",
+  "start_url": "./#/dashboard",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f3",
+  "theme_color": "#1f4b7a",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

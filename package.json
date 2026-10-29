@@ -1,0 +1,31 @@
+{
+  "name": "hafeez-helfer",
+  "version": "0.1.0",
+  "description": "Open-source, local-first Quran memorization (Hifz) revision assistant: mark your mistakes, get a personalized audio revision playlist in Quran order.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch --serve",
+    "start": "node scripts/serve.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "node scripts/lint.mjs",
+    "test": "node --test --test-reporter=spec \"tests/**/*.test.ts\"",
+    "test:data": "node --test --test-reporter=spec tests/data/*.datatest.ts",
+    "test:e2e": "node scripts/build.mjs --harness && node scripts/serve.mjs --check-harness",
+    "data:fetch": "node scripts/fetch-quran-data.ts",
+    "verify": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "26.5.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

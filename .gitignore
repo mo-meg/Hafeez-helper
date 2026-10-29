@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-harness/
+*.log
+.env
+.env.*
+!.env.example
+# Downloaded Quran datasets are reproducible via `npm run data:fetch`; commit them only
+# after reviewing the source licence (Tanzil text is CC BY 3.0 and must be kept verbatim).
+public/data/*.json
+!public/data/README.md
