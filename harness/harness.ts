@@ -511,6 +511,7 @@ async function run() {
     fill('#auth-password2', 'secret-123');
     submitAuth();
     session = await pending;
+    if (!session) throw new Error('no session');
     check(session.user.email === 'reader@example.com', 'signed up and signed in');
 
     const again = showAuthScreen(root, { client: authClient, redirectTo: location.href, onLanguage: () => {} });
@@ -521,7 +522,9 @@ async function run() {
     await waitFor(() => alertText().includes('not correct'), 'wrong password message');
     fill('#auth-password', 'secret-123');
     submitAuth();
-    check((await again).user.id === session.user.id, 'signed in with the same account');
+    const s2 = await again;
+    if (!s2) throw new Error('no session');
+    check(s2.user.id === session.user.id, 'signed in with the same account');
   });
 
   await step('Signed in: marks sync to the account and appear on a second device', async () => {

@@ -43,7 +43,7 @@ async function bootLocal(root: HTMLElement): Promise<void> {
   await startApp(root, store, storageError ? { storageError } : {});
 }
 
-/** Cloud mode: sign-in is required; data is kept locally per account and synced to Supabase. */
+/** Cloud mode: sign-in is offered; "continue as guest" keeps everything in this browser without sync. */
 async function bootCloud(root: HTMLElement, cfg: CloudConfig): Promise<void> {
   const wipe = pendingWipe();
   if (wipe) {
@@ -78,7 +78,12 @@ async function bootCloud(root: HTMLElement, cfg: CloudConfig): Promise<void> {
   }
 
   if (!session) {
-    session = await showAuthScreen(root, { client, redirectTo, message, onLanguage: setLanguageHint });
+    session = await showAuthScreen(root, { client, redirectTo, allowGuest: true, message, onLanguage: setLanguageHint });
+    if (!session) {
+      // Guest: no account, no sync — like local-only mode, but with a one-click way to sign in later.
+      await startApp(root, (await openDeviceStore()).store, { guestSignIn: () => void bootCloud(root, cfg) });
+      return;
+    }
     saveSession(session);
   }
   if (recovery) {

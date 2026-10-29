@@ -36,8 +36,10 @@ export interface AppDeps {
   readonly notices?: readonly string[];
   /** Set when IndexedDB could not be opened; shown as a localized notice on every page. */
   readonly storageError?: string;
-  /** Signed-in account with cloud sync; absent in local-only mode. */
+  /** Signed-in account with cloud sync; absent in local-only and guest mode. */
   readonly account?: AccountController;
+  /** Shows the sign-in screen again after continuing as a guest. */
+  readonly guestSignIn?: () => void;
   /** Called when the interface language changes (remembered for the sign-in screen). */
   readonly onLanguageChange?: (l: Locale) => void;
   /** Synthetic data for the browser test harness only. */
@@ -150,7 +152,7 @@ export class App {
       this.nav,
       brand(),
       NAV.map((n) => h('a', { class: 'nav-link', href: `#/${n.name}`, dataset: { route: n.name } }, icon(n.icon), h('span', null, t(n.label)))),
-      h('div', { class: 'rail-foot' }, this.languageSwitch(), this.deps.account ? this.accountMini() : h('span', null, t('app.privacyFoot'))),
+      h('div', { class: 'rail-foot' }, this.languageSwitch(), this.deps.account ? this.accountMini() : this.deps.guestSignIn ? h('button', { type: 'button', class: 'quiet', onclick: this.deps.guestSignIn }, t('acct.signIn')) : h('span', null, t('app.privacyFoot'))),
     );
     replaceChildren(this.topbar, brand(), h('div', { class: 'row', style: { 'flex-wrap': 'nowrap' } }, this.deps.account ? h('a', { class: 'sync-dot', href: '#/settings?section=account' }) : null, this.languageSwitch()));
     this.skipLink.textContent = t('app.skip');

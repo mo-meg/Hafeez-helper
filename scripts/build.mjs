@@ -88,7 +88,7 @@ async function buildApp() {
   };
   const copyPublic = async () => {
     await copyDir(join(root, 'public'), out, (src) => !src.endsWith('sw.js') && !src.endsWith('README.md'));
-    const files = ['./', './index.html', './main.js', './main.css', './manifest.webmanifest', './icon.svg'];
+    const files = ['./', './index.html', './main.js', './main.css', './fonts/fonts.css', './fonts/AmiriQuran.woff2', './manifest.webmanifest', './icon.svg'];
     const hash = createHash('sha256');
     for (const f of ['main.js', 'main.css']) hash.update(await readFile(join(out, f)).catch(() => ''));
     const sw = (await readFile(join(root, 'public/sw.js'), 'utf8'))

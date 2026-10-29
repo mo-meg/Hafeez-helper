@@ -57,11 +57,14 @@ function showToggle(...inputs: HTMLInputElement[]): HTMLElement {
   return h('label', { class: 'choice' }, h('input', { type: 'checkbox', onchange: (e: Event) => { for (const i of inputs) i.type = (e.target as HTMLInputElement).checked ? 'text' : 'password'; } }), h('span', null, t('auth.showPassword')));
 }
 
-/** Resolves with a session once the user has signed in (or signed up without email confirmation). */
-export function showAuthScreen(root: HTMLElement, opts: { client: AuthClient; redirectTo: string; message?: AuthMessage | null; onLanguage: (l: Locale) => void }): Promise<AuthSession> {
+/** Resolves with a session once the user has signed in (or signed up without email confirmation).
+ *  Resolves with null when the user chose to continue without an account (guest / local-only mode). */
+export function showAuthScreen(root: HTMLElement, opts: { client: AuthClient; redirectTo: string; allowGuest?: boolean; message?: AuthMessage | null; onLanguage: (l: Locale) => void }): Promise<AuthSession | null> {
   return new Promise((resolve) => {
     let mode: Mode = 'signIn';
     let message: AuthMessage | null = opts.message ?? null;
+    /** Completes as a guest: no session, the caller falls back to local-only mode. */
+    const guest = () => resolve(null);
     let email = '';
 
     const render = () => {
@@ -135,7 +138,13 @@ export function showAuthScreen(root: HTMLElement, opts: { client: AuthClient; re
           h(
             'div',
             { class: 'auth-links' },
-            mode === 'signIn' ? [h('button', { type: 'button', class: 'quiet', 'data-key': 'auth-to-signup', onclick: go('signUp') }, t('auth.toSignUp')), h('button', { type: 'button', class: 'quiet', 'data-key': 'auth-to-forgot', onclick: go('forgot') }, t('auth.toForgot'))] : null,
+            mode === 'signIn'
+              ? [
+                  h('button', { type: 'button', class: 'quiet', 'data-key': 'auth-to-signup', onclick: go('signUp') }, t('auth.toSignUp')),
+                  h('button', { type: 'button', class: 'quiet', 'data-key': 'auth-to-forgot', onclick: go('forgot') }, t('auth.toForgot')),
+                  opts.allowGuest ? h('button', { type: 'button', class: 'quiet', 'data-key': 'auth-guest', onclick: guest }, t('auth.guest')) : null,
+                ]
+              : null,
             mode !== 'signIn' ? h('button', { type: 'button', class: 'quiet', 'data-key': 'auth-to-signin', onclick: go('signIn') }, mode === 'signUp' ? t('auth.toSignIn') : t('auth.backToSignIn')) : null,
           ),
         ),

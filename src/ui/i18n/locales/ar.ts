@@ -7,10 +7,10 @@ import type { MessageKey } from './en.ts';
  */
 export const ar: Record<MessageKey, Message> = {
   // ---------------------------------------------------------------- app shell
-  'app.name': 'Hafeez Helfer',
+  'app.name': 'Hafeez Helper',
   'app.tagline': 'مراجعة الحفظ',
   'app.loading': 'جارٍ تحميل التطبيق…',
-  'app.titleSuffix': '{page} | Hafeez Helfer',
+  'app.titleSuffix': '{page} | Hafeez Helper',
   'app.skip': 'انتقل إلى المحتوى',
   'app.navLabel': 'القائمة الرئيسية',
   'app.privacyFoot': 'بياناتك تبقى على هذا الجهاز.',
@@ -657,7 +657,7 @@ export const ar: Record<MessageKey, Message> = {
   'set.themeDark': 'داكن',
   'set.fontSize': 'حجم النص العربي ({pct})',
   'set.fontPreview': 'معاينة حجم الخط',
-  'set.fontHelp': 'لأفضل عرض للرسم العثماني ثبّت الخط المجاني «KFGQPC HAFS Uthmanic Script» أو «Amiri Quran» على جهازك؛ وسيستخدمه التطبيق تلقائيًا.',
+  'set.fontHelp': 'يُعرض النص القرآني بخط «Amiri Quran» المرفق مع التطبيق، فيبدو شكله واحدًا على كل الأجهزة ويعمل دون اتصال.',
   'set.reminderSaved': 'حُفظ وقت التذكير.',
   'set.reminders': 'التذكير اليومي',
   'set.remindersHelp': 'التذكير محلي ولا يوجد خادم. ما دام التطبيق مفتوحًا (أو مثبّتًا ويعمل) فإنه يعرض إشعارًا مرة يوميًا بعد الوقت الذي تختاره إن لم تُنجز مراجعة اليوم. لا تستطيع المتصفحات إشعارك بثقة وتطبيق الويب مغلق، لذا أضف حدث التقويم أدناه إلى تقويمك لتذكير مضمون.',
@@ -724,6 +724,7 @@ export const ar: Record<MessageKey, Message> = {
   'auth.toSignUp': 'جديد هنا؟ أنشئ حسابًا',
   'auth.toSignIn': 'لديك حساب؟ سجّل الدخول',
   'auth.toForgot': 'نسيت كلمة المرور؟',
+  'auth.guest': 'المتابعة كزائر (دون مزامنة)',
   'auth.backToSignIn': 'العودة إلى تسجيل الدخول',
   'auth.working': 'يُرجى الانتظار…',
   'auth.checkEmail': 'تفقّد بريدك: أرسلنا رابط تأكيد إلى {email}. افتحه على هذا الجهاز ثم سجّل الدخول.',
@@ -746,6 +747,7 @@ export const ar: Record<MessageKey, Message> = {
   'auth.e.network': 'تعذّر الوصول إلى الخادم. تحقّق من اتصالك وحاول مجددًا.',
   'auth.e.unknown': 'فشل تسجيل الدخول: {detail}',
   'acct.title': 'الحساب',
+  'acct.signIn': 'تسجيل الدخول',
   'acct.signedInAs': 'مسجّل الدخول باسم {email}',
   'acct.syncNow': 'مزامنة الآن',
   'acct.signOut': 'تسجيل الخروج',

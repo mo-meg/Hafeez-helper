@@ -1,0 +1,8 @@
+/* Bundled Quran font (Amiri Quran, SIL OFL 1.1 — see LICENSE-Amiri.txt).
+   This is the app's primary Quran font; no locally-installed font is used.
+   Kept as plain CSS so esbuild never rewrites the URL; served as-is from /fonts/. */
+@font-face {
+  font-family: "AmiriQuran";
+  src: url("/fonts/AmiriQuran.woff2") format("woff2");
+  font-display: swap;
+}
