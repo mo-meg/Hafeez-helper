@@ -198,7 +198,7 @@ th { color: var(--mist); font-weight: 600; font-size: 0.82rem; }
 }
 .surah-head { text-align: center; margin: 1rem 0 0.5rem; padding: 0.5rem; border-block: 1px solid var(--line); }
 .surah-head .ar { font-family: var(--quran-font); font-size: calc(1.5rem * var(--quran-scale)); display: block; }
-.surah-head .tr { font-size: 0.85rem; color: var(--mist); }
+.surah-head .tr { font-family: var(--ui-font); font-size: 0.85rem; color: var(--mist); word-spacing: normal; }
 .basmala { text-align: center; font-family: var(--quran-font); font-size: calc(1.45rem * var(--quran-scale)); direction: rtl; margin: 0.25rem 0 0.75rem; }
 .division-marker { display: block; direction: ltr; text-align: center; font-family: var(--ui-font); font-size: 0.8rem; color: var(--lapis); margin: 0.6rem 0 0.2rem; }
 .division-marker::before, .division-marker::after { content: ''; display: inline-block; width: 2.5rem; height: 1px; background: currentColor; vertical-align: middle; margin: 0 0.6rem; opacity: 0.5; }
@@ -214,7 +214,7 @@ th { color: var(--mist); font-weight: 600; font-size: 0.82rem; }
   color: var(--mistake); background: var(--mistake-soft);
   text-decoration: underline 0.14em var(--mistake); text-underline-offset: 0.42em; text-decoration-skip-ink: none;
 }
-.w.marked.resolved { color: inherit; background: var(--sage-soft); text-decoration-color: var(--sage); text-decoration-style: dotted; }
+.w.marked.resolved { color: var(--sage); background: var(--sage-soft); text-decoration-color: var(--sage); }
 .w.focus { outline: 2px solid var(--lapis); }
 .pause-mark { color: var(--lapis); font-size: 0.85em; }
 .ayah-end {
@@ -243,12 +243,14 @@ dialog::backdrop { background: rgb(10 20 16 / 0.45); }
 .dialog-body { padding: 1.25rem; overflow-y: auto; max-height: calc(100vh - 6rem); }
 .dialog-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; padding: 0.75rem 1.25rem; border-top: 1px solid var(--line); }
 .dialog-word { font-family: var(--quran-font); font-size: 2rem; direction: rtl; color: var(--mistake); text-align: center; margin: 0.25rem 0 0.75rem; }
+.dialog-word.resolved { color: var(--sage); }
 .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.25rem; }
 
 /* ---------- mistakes list ---------- */
 .mistake-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; padding: 0.75rem 0; border-bottom: 1px solid var(--line); }
 .mistake-row .ref { font-weight: 600; font-variant-numeric: tabular-nums; }
 .mistake-row .word-ar { font-family: var(--quran-font); font-size: 1.4rem; direction: rtl; color: var(--mistake); }
+.mistake-row .word-ar.resolved { color: var(--sage); }
 .mistake-row .note { font-size: 0.9rem; margin: 0.2rem 0 0; white-space: pre-wrap; }
 @media (max-width: 640px) { .mistake-row { grid-template-columns: 1fr; } }
 
@@ -299,4 +301,5 @@ dialog::backdrop { background: rgb(10 20 16 / 0.45); }
 }
 .w.revealed { color: var(--lapis); cursor: default; }
 .w.revealed.marked { color: var(--mistake); }
+.w.revealed.marked.resolved { color: var(--sage); }
 .test-card span.w { cursor: default; }

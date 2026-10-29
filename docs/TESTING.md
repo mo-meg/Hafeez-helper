@@ -2,7 +2,7 @@
 
 | Command | What it runs |
 |---|---|
-| `npm test` | 123 unit and integration tests (Node's built-in `node:test`, TypeScript run natively by Node ≥ 22.18) |
+| `npm test` | 124 unit and integration tests (Node's built-in `node:test`, TypeScript run natively by Node ≥ 22.18) |
 | `npm run typecheck` | `tsc` in strict mode (`noUncheckedIndexedAccess`, `erasableSyntaxOnly`, …) |
 | `npm run lint` | Project rules: no HTML injection, no `eval`, no `console.log`, no TODOs, and `src/core` must not touch the DOM or import UI/browser code |
 | `npm run test:e2e` | Builds the browser harness `dist-harness/harness.html`; open it in a browser to run 21 end-to-end journeys |
@@ -20,7 +20,7 @@
 | `playlist.test.ts` | 14 | Only in-scope unresolved mistakes; Quran order; one entry per ayah with grouped words; per-word practice; context only on request; overlapping windows merge; surah-bounded context; category/status filters; empty playlist; exact repetition counts (5 = five plays); group and playlist passes; pauses; combined sessions; duration estimate |
 | `playback.test.ts` | 14 | Mocked audio: exact plays per ayah in order; pauses; 3/5 indicator; missing audio stops with an explicit error, retry, explicit skip recorded; offline-unavailable error; mid-play network error; next/prev/restart/next-mistake/restart-playlist/stop; pause during gap; assessment pause; stale-load race; playback rate; URL templates |
 | `plan-dashboard-backup.test.ts` | 11 | One plan per date; session completion completes plan and resolves nothing; next-portion suggestion; dashboard zero state and real-history aggregation; backup round-trip, rejection of invalid/orphaned/future backups, merge semantics, wipe; demo data flagged and removable; preferences repair |
-| `test-mode.test.ts` | 11 | Auto "linking ayat" type for first words and its review interval; test cards: one per ayah, Quran order, unresolved by default; hide from the first marked word; transition/first-word/whole-ayah cards show the previous ayah (across surahs; none before 1:1); deterministic shuffle; hint/reveal and allowed answers; answers recorded, nothing resolved |
+| `test-mode.test.ts` | 12 | Auto "linking ayat" type for first words and its review interval; test cards: one per ayah, Quran order, unresolved by default; hide from the first marked word; transition/first-word/whole-ayah cards show the previous ayah (across surahs; none before 1:1); deterministic shuffle; hint/reveal and allowed answers; answers recorded, nothing resolved |
 | `session.test.ts` | 4 | Mistakes / full / combined session assembly; reminder decision; .ics generation |
 
 ## Browser end-to-end harness (`harness/harness.ts`)

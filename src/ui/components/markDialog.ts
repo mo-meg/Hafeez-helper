@@ -73,7 +73,7 @@ export async function openMarkDialog(app: App, target: MarkTarget): Promise<void
     title: existing ? 'Recorded mistake' : 'Mark a mistake',
     body: [
       h('p', { class: 'muted' }, where),
-      target.word ? h('div', { class: 'dialog-word', lang: 'ar', dir: 'rtl' }, target.word.tokenText) : null,
+      target.word ? h('div', { class: `dialog-word${existing?.status === 'resolved' ? ' resolved' : ''}`, lang: 'ar', dir: 'rtl' }, target.word.tokenText) : null,
       target.word ? h('p', { class: 'muted' }, 'Revision plays the whole ayah. Word-level audio positioning is not available for the configured audio sources.') : null,
       existing ? details(existing) : null,
       existing && shouldSuggestResolve(existing.status, existing.successStreak)

@@ -82,7 +82,7 @@ function setupView(app: App): Node {
           ? h('label', { class: 'field' }, h('span', null, 'Surah'), h('select', { id: 'test-surah', 'data-key': 'test-surah', onchange: (e: Event) => { setup.surah = Number((e.target as HTMLSelectElement).value); rerender(); } }, SURAHS.map((s) => h('option', { value: String(s.number), selected: s.number === setup.surah }, `${s.number}. ${s.nameTransliterated}`))))
           : h('label', { class: 'field' }, h('span', null, `Number (1–${max})`), h('input', { id: 'test-num', 'data-key': 'test-num', type: 'number', min: '1', max: String(max), value: String(setup.number), onchange: (e: Event) => { const v = Number((e.target as HTMLInputElement).value); if (Number.isInteger(v) && v >= 1 && v <= max) setup.number = v; rerender(); } })),
       ),
-      h('label', { class: 'choice' }, h('input', { type: 'checkbox', checked: setup.includeResolved, 'data-key': 'test-resolved', onchange: (e: Event) => { setup.includeResolved = (e.target as HTMLInputElement).checked; rerender(); } }), h('span', null, 'Also test mistakes I marked as resolved')),
+      h('label', { class: 'choice' }, h('input', { type: 'checkbox', checked: setup.includeResolved, 'data-key': 'test-resolved', onchange: (e: Event) => { setup.includeResolved = (e.target as HTMLInputElement).checked; rerender(); } }), h('span', null, 'Also test old resolved mistakes')),
       h('label', { class: 'choice' }, h('input', { type: 'checkbox', checked: setup.shuffle, 'data-key': 'test-shuffle', onchange: (e: Event) => { setup.shuffle = (e.target as HTMLInputElement).checked; rerender(); } }), h('span', null, 'Mix the order (otherwise Quran order)')),
       problem ? h('p', { role: 'alert', style: { color: 'var(--mistake)' } }, problem) : null,
       h(
@@ -113,7 +113,7 @@ function setupView(app: App): Node {
       h('p', null, 'Mistake inside an ayah: the ayah is shown up to the word where you made the mistake. That word and the rest of the ayah are hidden.'),
       h('p', null, 'Mistake at the start of an ayah (linking ayat), or a whole-ayah mistake: the whole ayah is hidden, so you practise moving from one ayah to the next.'),
       h('p', null, 'Several mistakes in one ayah are asked one after another: “Reveal” stops just before your next mistake, which stays hidden until you answer.'),
-      h('p', { class: 'muted' }, '“Hint” uncovers one word; after a hint the answer counts as “Needed a prompt”. Your answers update each mistake’s status, review schedule and progress. Nothing is marked resolved automatically.'),
+      h('p', { class: 'muted' }, '“Hint” uncovers one word; after a hint the answer counts as “Needed a prompt”. Your answers update each mistake’s status, review schedule and progress. “Correct without difficulty” marks the mistake resolved (shown in green); a resolved mistake that fails a later test is reopened (red again).'),
     ),
   );
 }
@@ -122,6 +122,9 @@ function ayahTokens(app: App, idx: number, card: TestCard | null, reveal: Reveal
   const ayah = app.quran.text?.ayahAt(idx);
   if (!ayah) return null;
   const marked = new Set(card?.markedPositions ?? []);
+  const resolvedPositions = new Set(
+    app.data.mistakes.filter((m) => card?.mistakeIds.includes(m.id) && m.status === 'resolved' && m.word).map((m) => m.word?.position as number),
+  );
   let lastWordVisible = true;
   return ayah.tokens.map((t) => {
     if (t.position === null) return lastWordVisible ? [h('span', { class: 'pause-mark', 'aria-hidden': 'true' }, t.text), ' '] : null;
@@ -129,14 +132,15 @@ function ayahTokens(app: App, idx: number, card: TestCard | null, reveal: Reveal
     lastWordVisible = visible;
     if (!visible) return [h('span', { class: 'hidden-word', role: 'img', 'aria-label': 'hidden word', style: { '--len': String(Math.max(2, t.text.length)) } }), ' '];
     const wasHidden = card && t.position >= card.hideFrom;
-    return [h('span', { class: `${marked.has(t.position) && wasHidden ? 'w marked' : 'w'}${wasHidden ? ' revealed' : ''}` }, t.text), ' '];
+    const markCls = marked.has(t.position) && wasHidden ? ` marked${resolvedPositions.has(t.position) ? ' resolved' : ''}` : '';
+    return [h('span', { class: `w${markCls}${wasHidden ? ' revealed' : ''}` }, t.text), ' '];
   });
 }
 
 async function answer(app: App, t: ActiveTest, card: TestCard, outcome: RecallOutcome) {
   const seg = card.segments[t.reveal.segment];
   const ok = await app.act(async () => {
-    await app.s.mistakes.recordAyahReview(card.ref, outcome, { sessionId: t.sessionId, repetitions: 0, assisted: t.reveal.hintsUsed > 0 || outcome === 'needed_prompt' }, seg?.mistakeIds ?? card.mistakeIds);
+    await app.s.mistakes.recordAyahReview(card.ref, outcome, { sessionId: t.sessionId, repetitions: 0, assisted: t.reveal.hintsUsed > 0 || outcome === 'needed_prompt', resolveOnEasy: true }, seg?.mistakeIds ?? card.mistakeIds);
     t.answers.set(`${card.id}:${t.reveal.segment}`, outcome);
     await app.s.plans.recordTestProgress(t.sessionId, t.answers.size);
   });
@@ -232,7 +236,7 @@ function summaryView(app: App, t: ActiveTest): Node {
       'section',
       { class: 'panel' },
       h('h2', null, 'Results'),
-      h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'Ayah'), h('th', null, 'Type'), h('th', null, 'Your answer'))), h('tbody', null, t.cards.map((c) => h('tr', null, h('td', null, h('a', { href: `#/quran?surah=${c.ref.surah}&focus=${c.globalIndex}` }, formatRef(c.ref))), h('td', null, c.kind === 'transition' ? 'Linking ayat' : 'Within the ayah'), h('td', null, answersOf(c).map((o, i) => `${c.segments.length > 1 ? `${i + 1}. ` : ''}${o ? OUTCOME_LABELS[o] : 'Skipped'}`).join('; '))))))),
+      h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'Ayah'), h('th', null, 'Type'), h('th', null, 'Your answer'))), h('tbody', null, t.cards.map((c) => h('tr', null, h('td', null, h('a', { href: `#/quran?surah=${c.ref.surah}&focus=${c.globalIndex}` }, formatRef(c.ref))), h('td', null, c.kind === 'transition' ? 'Linking ayat' : 'Within the ayah'), h('td', null, answersOf(c).map((o, i) => `${c.segments.length > 1 ? `${i + 1}. ` : ''}${o ? `${OUTCOME_LABELS[o]}${o === 'correct_easy' ? ' (now resolved)' : ''}` : 'Skipped'}`).join('; '))))))),
       h(
         'div',
         { class: 'row', style: { 'margin-top': '1rem' } },

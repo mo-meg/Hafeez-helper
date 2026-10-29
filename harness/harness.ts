@@ -316,7 +316,9 @@ async function run() {
     check(reviews.some((r) => r.globalIndex === 262 && r.outcome === 'needed_prompt' && r.assisted), 'hinted answer recorded as needed a prompt');
     check(reviews.some((r) => r.globalIndex === 263 && r.outcome === 'correct_easy'), 'linking answer recorded');
     check((await store.sessions.getAll()).some((x) => x.mode === 'test' && x.status === 'completed' && x.completedSteps === 2), 'test session saved');
-    check((await store.mistakes.getAll()).every((m) => m.status !== 'resolved'), 'nothing auto-resolved');
+    const after = await store.mistakes.getAll();
+    check(after.find((m) => m.globalIndex === 263)?.status === 'resolved', '"correct without difficulty" resolved 2:256');
+    check(after.find((m) => m.globalIndex === 262)?.status !== 'resolved', 'hinted answer did not resolve 2:255');
     $<HTMLButtonElement>('[data-key="test-new"]')?.click();
   });
 
@@ -343,13 +345,14 @@ async function run() {
     $<HTMLButtonElement>('[data-key="test-o-correct_easy"]')?.click();
     await waitFor(() => /mistake 2 of 2 in this ayah/.test($('main')?.textContent ?? ''), 'second step');
     check(visible() === 3, 'revealed words stay visible');
+    check($$('.test-target .w.marked.resolved').length === 1, 'the just-resolved mistake turns green');
     $<HTMLButtonElement>('[data-key="test-reveal"]')?.click();
     await sleep(40);
     check($$('.test-target .hidden-word').length === 0, 'second reveal shows the rest of the ayah');
     $<HTMLButtonElement>('[data-key="test-o-mistake_again"]')?.click();
     await sleep(150);
     const ms = (await store.mistakes.getAll()).filter((m) => m.globalIndex === 264);
-    check(ms.find((m) => m.word?.position === 2)?.status === 'under_review', 'first mistake got its own answer');
+    check(ms.find((m) => m.word?.position === 2)?.status === 'resolved', 'first mistake (correct without difficulty) resolved on its own');
     check(ms.find((m) => m.word?.position === 4)?.status === 'needs_practice', 'second mistake got its own answer');
     $<HTMLButtonElement>('[data-key="test-end"]')?.click();
     await waitFor(() => /Test finished/.test($('main h1')?.textContent ?? ''), 'summary');

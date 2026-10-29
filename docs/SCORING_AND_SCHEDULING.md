@@ -14,8 +14,11 @@ States: **new → needs practice / under review / improved → resolved → reop
 | Needed a prompt | needs practice (resolved → reopened) | reset to 0 | marked "assisted" |
 | Made a mistake again | needs practice (resolved → reopened) | reset to 0 | lapse +1 |
 
-* **No outcome ever resolves a mistake.** Resolution is always an explicit user action. After
-  3 easy recalls in separate sessions, the UI *suggests* resolving.
+* **In revision sessions no outcome resolves a mistake**; resolution is an explicit action (after
+  3 easy recalls in separate sessions the UI *suggests* it). **Exception, chosen by the user: in a
+  Test, "Correct without difficulty" (without hints) marks that mistake resolved.** A resolved
+  mistake that fails a later test ("Needed a prompt" or "Mistake again") is reopened.
+* Resolved mistakes are shown in green; unresolved ones in red.
 * Marking the same word or ayah again does not create a duplicate. It records a recurrence
   (lapse) on the existing record, or reopens it if it was resolved.
 * Resolved mistakes and all their events stay in history unless the user deletes them.

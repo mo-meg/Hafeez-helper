@@ -136,18 +136,36 @@ describe('test cards', () => {
     assert.equal(allowedOutcomes(next).length, 4, 'hints are counted per step');
   });
 
-  it('test answers are recorded as reviews and never resolve mistakes', async () => {
+  it('test answers are recorded; "correct without difficulty" resolves only that mistake', async () => {
     const { mistakes, plans, list, store } = await scenario();
     const cards = buildTestCards(list, hizb5);
-    const s = await plans.startSession({ planId: null, mode: 'test', scope: { type: 'division', kind: 'hizb', number: 5 }, reciterId: 'r', repeat: { ayahRepeat: 1, groupRepeat: 1, playlistRepeat: 1, repeatContext: false, pauseBetweenRepetitionsMs: 0, pauseBetweenAyatMs: 0, playbackRate: 1 }, mistakeAyahIndexes: cards.map((c) => c.globalIndex), plannedSteps: cards.length });
-    const c = cards[0];
+    const s = await plans.startSession({ planId: null, mode: 'test', scope: { type: 'division', kind: 'hizb', number: 5 }, reciterId: 'r', repeat: { ayahRepeat: 1, groupRepeat: 1, playlistRepeat: 1, repeatContext: false, pauseBetweenRepetitionsMs: 0, pauseBetweenAyatMs: 0, playbackRate: 1 }, mistakeAyahIndexes: cards.map((c) => c.globalIndex), plannedSteps: totalSteps(cards) });
+    const c = cards[0]; // 2:255: steps for word 3 and word 5
     assert.ok(c);
-    await mistakes.recordAyahReview(c.ref, 'correct_easy', { sessionId: s.id, repetitions: 0 }, c.mistakeIds);
-    await plans.recordTestProgress(s.id, 1);
+    const [first, second] = c.segments;
+    assert.ok(first && second);
+    await mistakes.recordAyahReview(c.ref, 'correct_easy', { sessionId: s.id, repetitions: 0, resolveOnEasy: true }, first.mistakeIds);
+    await mistakes.recordAyahReview(c.ref, 'correct_difficult', { sessionId: s.id, repetitions: 0, resolveOnEasy: true }, second.mistakeIds);
+    await plans.recordTestProgress(s.id, 2);
     await plans.completeSession(s.id);
-    const reviews = await store.reviews.getAll();
-    assert.equal(reviews.length, 2);
-    assert.ok((await store.mistakes.getAll()).every((m) => m.status !== 'resolved' || m.ayah === 280));
-    assert.equal((await store.sessions.get(s.id))?.completedSteps, 1);
+    assert.equal((await mistakes.get(first.mistakeIds[0] as string)).status, 'resolved');
+    assert.ok((await mistakes.get(first.mistakeIds[0] as string)).resolvedAt);
+    assert.equal((await mistakes.get(second.mistakeIds[0] as string)).status, 'under_review', 'difficult answers do not resolve');
+    const ev = (await store.mistakeEvents.getAll()).find((e) => e.mistakeId === first.mistakeIds[0] && e.type === 'resolved');
+    assert.equal(ev?.detail, 'test:correct_easy');
+    assert.equal((await store.sessions.get(s.id))?.completedSteps, 2);
+  });
+
+  it('an assisted answer or a revision session never resolves; a resolved mistake that fails a test is reopened', async () => {
+    const { mistakes } = setup();
+    const a = await mistakes.markWord({ surah: 2, ayah: 255 }, word(2), { category: 'forgotten' });
+    await mistakes.recordAyahReview({ surah: 2, ayah: 255 }, 'correct_easy', { sessionId: 'rev', repetitions: 3 });
+    assert.notEqual((await mistakes.get(a.mistake.id)).status, 'resolved', 'revision sessions keep the old rule');
+    await mistakes.recordAyahReview({ surah: 2, ayah: 255 }, 'correct_easy', { sessionId: 't0', repetitions: 0, assisted: true, resolveOnEasy: true });
+    assert.notEqual((await mistakes.get(a.mistake.id)).status, 'resolved', 'hinted answers do not resolve');
+    await mistakes.recordAyahReview({ surah: 2, ayah: 255 }, 'correct_easy', { sessionId: 't1', repetitions: 0, resolveOnEasy: true });
+    assert.equal((await mistakes.get(a.mistake.id)).status, 'resolved');
+    await mistakes.recordAyahReview({ surah: 2, ayah: 255 }, 'mistake_again', { sessionId: 't2', repetitions: 0, resolveOnEasy: true }, [a.mistake.id]);
+    assert.equal((await mistakes.get(a.mistake.id)).status, 'reopened');
   });
 });

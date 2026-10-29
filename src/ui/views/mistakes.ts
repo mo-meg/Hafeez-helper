@@ -64,7 +64,7 @@ function row(app: App, m: Mistake): HTMLElement {
   return h(
     'div',
     { class: 'mistake-row' },
-    h('div', null, h('div', { class: 'ref' }, `${m.surah}:${m.ayah}`), h('small', { class: 'muted' }, surahInfo(m.surah).nameTransliterated), m.word ? h('div', { class: 'word-ar', lang: 'ar', dir: 'rtl' }, m.word.tokenText) : h('div', null, h('small', null, 'Whole ayah'))),
+    h('div', null, h('div', { class: 'ref' }, `${m.surah}:${m.ayah}`), h('small', { class: 'muted' }, surahInfo(m.surah).nameTransliterated), m.word ? h('div', { class: `word-ar${m.status === 'resolved' ? ' resolved' : ''}`, lang: 'ar', dir: 'rtl' }, m.word.tokenText) : h('div', null, h('small', null, 'Whole ayah'))),
     h(
       'div',
       null,

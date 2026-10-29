@@ -52,6 +52,11 @@ export interface ReviewContext {
   readonly durationMs?: number | null;
   readonly assisted?: boolean;
   readonly demo?: boolean;
+  /**
+   * Test rule chosen by the user: an unassisted "correct without difficulty" answer in a Test
+   * resolves the mistake (it is still reopened if it fails a later test or is marked again).
+   */
+  readonly resolveOnEasy?: boolean;
 }
 
 export class MistakeError extends Error {
@@ -276,13 +281,15 @@ export class MistakeService {
         },
         this.scheduler,
       );
+      const resolveNow = ctx.resolveOnEasy === true && outcome === 'correct_easy' && !ctx.assisted && res.status !== 'resolved';
+      const nextStatus = resolveNow ? 'resolved' : res.status;
       const updated: Mistake = {
         ...m,
-        status: res.status,
+        status: nextStatus,
         successStreak: res.successStreak,
         lapseCount: res.lapseCount,
         reopenCount: res.reopenCount,
-        resolvedAt: res.status === 'resolved' ? m.resolvedAt : null,
+        resolvedAt: resolveNow ? atIso : res.status === 'resolved' ? m.resolvedAt : null,
         lastStreakSessionId: res.streakCounted ? ctx.sessionId : res.successStreak === 0 ? null : m.lastStreakSessionId,
         reviewCount: m.reviewCount + 1,
         lastReviewedAt: atIso,
@@ -303,12 +310,13 @@ export class MistakeService {
         repetitions: ctx.repetitions,
         durationMs: ctx.durationMs ?? null,
         prevStatus: m.status,
-        nextStatus: res.status,
+        nextStatus,
         ...(ctx.demo || m.demo ? { demo: true } : {}),
       };
       await this.store.mistakes.put(updated);
       await this.store.reviews.put(event);
-      if (m.status !== res.status) await this.logEvent(m.id, res.status === 'reopened' ? 'reopened' : 'status_changed', { from: m.status, to: res.status, detail: `review:${outcome}` });
+      if (resolveNow) await this.logEvent(m.id, 'resolved', { from: m.status, to: 'resolved', detail: 'test:correct_easy' });
+      else if (m.status !== res.status) await this.logEvent(m.id, res.status === 'reopened' ? 'reopened' : 'status_changed', { from: m.status, to: res.status, detail: `review:${outcome}` });
       events.push(event);
     }
     return events;

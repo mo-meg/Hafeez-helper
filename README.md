@@ -32,7 +32,10 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   shows the previous ayah in full. For a mistake inside an ayah, the ayah is shown up to the
   mistaken word and the rest is hidden; for a linking mistake (or a first-word or whole-ayah
   mistake) the whole ayah is hidden. With several mistakes in one ayah, each is asked in turn:
-  "Reveal" stops just before the next mistake, which stays hidden until you answer. "Hint" uncovers one word at a time (then the answer counts as *needed a prompt*),
+  "Reveal" stops just before the next mistake, which stays hidden until you answer.
+  Answering "Correct without difficulty" (without hints) marks that mistake resolved, and it turns
+  from red to green everywhere. "Also test old resolved mistakes" (off by default) re-checks them;
+  a resolved mistake that fails is reopened. "Hint" uncovers one word at a time (then the answer counts as *needed a prompt*),
   "Reveal" shows the rest, and your answer updates status, schedule and progress. Unresolved
   mistakes by default, resolved ones optionally; Quran order or mixed.
 * **Daily revision planner** with mistakes-only, full, or combined revision, estimated
