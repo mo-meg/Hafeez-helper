@@ -38,6 +38,10 @@ export type PlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'gap' | '
 export interface PlayerError {
   readonly message: string;
   readonly globalIndex: number;
+  /** Technical reason reported by the audio backend (for display next to a localized message). */
+  readonly reason: string;
+  /** True when the ayah is unavailable because the device is offline and it is not cached. */
+  readonly offline: boolean;
 }
 
 export interface PlayerState {
@@ -323,7 +327,7 @@ export class PlaybackController {
     this.cancelPending();
     this.backend.stop();
     this.status = 'error';
-    this.error = { message: `Audio for ${where} could not be played: ${reason}`, globalIndex: step?.item.globalIndex ?? 0 };
+    this.error = { message: `Audio for ${where} could not be played: ${reason}`, globalIndex: step?.item.globalIndex ?? 0, reason, offline: e instanceof AudioUnavailableError };
     this.emit();
   }
 

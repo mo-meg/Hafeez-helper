@@ -1,6 +1,23 @@
 import type { Identified, KeyValue, Store, Table } from '../core/storage/store.ts';
 
-const DB_NAME = 'hafeez-helfer';
+/** Device database: Quran data and audio caches, plus personal data in local-only mode. */
+export const DB_NAME = 'hafeez-helfer';
+
+/** Personal database of one signed-in account (kept separate so accounts never mix on a device). */
+export function userDatabaseName(userId: string): string {
+  return `${DB_NAME}-user-${userId.replace(/[^a-zA-Z0-9-]/g, '')}`;
+}
+
+/** Deletes a whole database (used after sign-out, before any connection to it is opened). */
+export function deleteDatabase(name: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') return resolve();
+    const r = indexedDB.deleteDatabase(name);
+    r.onsuccess = () => resolve();
+    r.onerror = () => resolve();
+    r.onblocked = () => resolve();
+  });
+}
 /** IndexedDB structural version. Upgrades are applied step by step in `upgrade`. */
 const DB_VERSION = 1;
 const RECORD_STORES = ['mistakes', 'reviews', 'mistakeEvents', 'plans', 'sessions'] as const;

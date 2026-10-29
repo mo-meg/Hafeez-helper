@@ -42,6 +42,8 @@ export const PreferencesSchema = z.object({
   theme: z.enum(['system', 'light', 'dark']),
   fontScale: z.number().min(0.8).max(2.5),
   reminder: z.object({ enabled: z.boolean(), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) }),
+  /** Interface language. Arabic is the default; Quran text is never affected by it. */
+  language: z.enum(['ar', 'en']),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
@@ -71,6 +73,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   theme: 'system',
   fontScale: 1.2,
   reminder: { enabled: false, time: '07:00' },
+  language: 'ar',
 };
 
 /** Merges stored (possibly older/partial) preferences onto defaults; invalid fields fall back. */

@@ -15,9 +15,17 @@ import type { Store } from '../src/core/storage/store.ts';
 import { randomIds, systemClock } from '../src/core/util/ids.ts';
 import { App } from '../src/ui/app.ts';
 import { syntheticDivisions, syntheticText } from '../tests/fixtures/synthetic.ts';
+import { FakeSupabase } from '../tests/fixtures/fakeSupabase.ts';
+import { AuthClient, SessionManager, type AuthSession } from '../src/core/sync/authClient.ts';
+import { SupabaseRecords, SyncEngine } from '../src/core/sync/syncEngine.ts';
+import type { AccountController } from '../src/ui/auth/account.ts';
+import { showAuthScreen } from '../src/ui/auth/authView.ts';
 
 declare const SHOWCASE: string | undefined;
+declare const SHOWCASE_LANG: string | undefined;
 const showcase = typeof SHOWCASE === 'string' ? SHOWCASE : '';
+/** Interface language for the final showcase screen (journeys themselves run in both languages). */
+const showcaseLang = typeof SHOWCASE_LANG === 'string' ? SHOWCASE_LANG : 'en';
 
 /** Mock audio: each "file" plays for 15 ms; URLs containing a failing marker reject. */
 class FakeAudio implements AudioBackend {
@@ -102,7 +110,19 @@ async function run() {
   const audio = new FakeAudio();
   const root = document.getElementById('app') as HTMLElement;
   let app = await makeApp(store, audio, root);
-  await app.savePrefs({ ...app.prefs, repeat: { ...app.prefs.repeat, pauseBetweenAyatMs: 0, pauseBetweenRepetitionsMs: 0 } });
+
+  await step('A fresh install starts in Arabic, right-to-left', async () => {
+    const html = document.documentElement;
+    check(app.prefs.language === 'ar', `default language is ${app.prefs.language}`);
+    check(html.lang === 'ar' && html.dir === 'rtl', `html lang=${html.lang} dir=${html.dir}`);
+    check(getComputedStyle(document.body).direction === 'rtl', 'body direction rtl');
+    check($('.rail a[data-route="dashboard"]')?.textContent?.trim() === 'الرئيسية', 'navigation in Arabic');
+    check(byText('main h1', 'السلام عليكم'), 'dashboard heading in Arabic');
+  });
+
+  // The established journeys below drive the UI by its English labels; Arabic journeys follow later.
+  await app.savePrefs({ ...app.prefs, language: 'en', repeat: { ...app.prefs.repeat, pauseBetweenAyatMs: 0, pauseBetweenRepetitionsMs: 0 } });
+  check(document.documentElement.lang === 'en' && document.documentElement.dir === 'ltr', 'switched to English');
 
   await step('Opens Hizb 5 with verified boundaries (2:253 to 3:14)', async () => {
     await go('#/quran?hizb=5');
@@ -374,7 +394,171 @@ async function run() {
     }
   });
 
-  if (showcase === 'live-session') {
+  // ------------------------------------------------------------ Arabic / English
+  const refsIn = (sel: string) => $$(sel).map((el) => /(\d+):(\d+)/.exec(el.textContent ?? '')?.[0] ?? '?');
+  const quranWords = () => $$('.quran .w').map((w) => w.textContent).join('|');
+
+  await step('Switching to Arabic keeps the route, marks and Quran text; labels and direction change', async () => {
+    await go('#/quran?hizb=5');
+    await waitFor(() => $('.division-panel'), 'reader');
+    const wordsBefore = quranWords();
+    const countBefore = (await store.mistakes.getAll()).length;
+    const hashBefore = location.hash;
+    ($<HTMLButtonElement>('.rail [data-key="lang-ar"]') as HTMLButtonElement).click();
+    await waitFor(() => document.documentElement.lang === 'ar', 'html lang=ar');
+    check(document.documentElement.dir === 'rtl', 'dir=rtl');
+    check(location.hash === hashBefore, 'route unchanged');
+    check($('.division-panel h2')?.textContent === 'الحزب 5', `panel title ${$('.division-panel h2')?.textContent}`);
+    check(($('.division-panel')?.textContent ?? '').includes('البقرة 2:253'), 'start reference localized');
+    check($('.rail a[data-route="quran"]')?.textContent?.trim() === 'المصحف', 'navigation localized');
+    check(quranWords() === wordsBefore, 'Quran words identical in both languages');
+    check($('.quran')?.getAttribute('dir') === 'rtl' && $('.quran')?.getAttribute('lang') === 'ar', 'Quran text stays rtl/ar');
+    check($('button.w.marked[data-a="262"][data-p="2"]'), 'existing word mark still shown');
+    check((await store.mistakes.getAll()).length === countBefore, 'no mistakes changed');
+    check(($<HTMLButtonElement>('.rail [data-key="lang-ar"]') as HTMLButtonElement).getAttribute('aria-pressed') === 'true', 'switch shows Arabic as selected');
+    const toast = getComputedStyle($('.toast-region') as HTMLElement);
+    check(toast.left === '16px', `toasts sit on the inline end in RTL (left=${toast.left})`);
+  });
+
+  await step('Arabic: marks a whole ayah (2:258) with localized dialog', async () => {
+    const before = (await store.mistakes.getAll()).length;
+    (await waitFor(() => $<HTMLButtonElement>('button.ayah-end[data-end="265"]'), '2:258 end marker')).click();
+    const d1 = await waitFor(dialog, 'ayah dialog');
+    check(d1.querySelector('h2')?.textContent === 'البقرة 2:258', `dialog title ${d1.querySelector('h2')?.textContent}`);
+    ($<HTMLButtonElement>('[data-key="markayah-265"]', d1) as HTMLButtonElement).click();
+    const d2 = await waitFor(() => (dialog()?.querySelector('h2')?.textContent === 'تسجيل خطأ' ? dialog() : null), 'Arabic mark dialog');
+    ($<HTMLButtonElement>('.dialog-actions button.primary', d2 as ParentNode) as HTMLButtonElement).click();
+    await waitFor(() => $('button.ayah-end.has-mistake[data-end="265"]'), 'ayah marked');
+    check((await store.mistakes.getAll()).length === before + 1, 'saved one new mistake');
+  });
+
+  await step('Playlist order is identical in Arabic and English', async () => {
+    await go('#/revision');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="start-revision"]'), 'start')).click();
+    await waitFor(() => $('[data-key="start-session"]'), 'preview');
+    const ar = refsIn('table tbody tr td:nth-child(2)');
+    check($('main h1')?.textContent === 'الحزب 5', `Arabic title (${$('main h1')?.textContent})`);
+    ($<HTMLButtonElement>('.rail [data-key="lang-en"]') as HTMLButtonElement).click();
+    await waitFor(() => document.documentElement.lang === 'en', 'english');
+    const en = refsIn('table tbody tr td:nth-child(2)');
+    check(ar.length > 0 && ar.join(',') === en.join(','), `ar ${ar.join(',')} vs en ${en.join(',')}`);
+    check($('main h1')?.textContent === 'Hizb 5', `title follows language (${$('main h1')?.textContent})`);
+  });
+
+  await step('Switching language during playback keeps the session and position', async () => {
+    $<HTMLButtonElement>('[data-key="start-session"]')?.click();
+    await waitFor(() => app.player.state.status === 'awaiting_assessment', 'first assessment pause', 6000);
+    const before = { id: app.active?.id, index: app.player.state.index, done: app.player.state.completedSteps, steps: app.player.state.steps.length, status: app.player.state.status };
+    ($<HTMLButtonElement>('.rail [data-key="lang-ar"]') as HTMLButtonElement).click();
+    await waitFor(() => document.documentElement.lang === 'ar', 'arabic');
+    const after = { id: app.active?.id, index: app.player.state.index, done: app.player.state.completedSteps, steps: app.player.state.steps.length, status: app.player.state.status };
+    check(JSON.stringify(before) === JSON.stringify(after), `before ${JSON.stringify(before)} after ${JSON.stringify(after)}`);
+    check(($('.now-playing .ref-big')?.textContent ?? '').startsWith('البقرة'), 'current ayah label localized');
+    check($('[data-key="c-play"]')?.getAttribute('aria-label') === 'تشغيل', 'player control labels localized');
+    $<HTMLButtonElement>('[data-key="o-correct_difficult"]')?.click();
+    await waitFor(() => app.player.state.completedSteps > before.done || app.player.state.index > before.index, 'playback continues after answering', 6000);
+    app.player.stop();
+    await app.endSession(false);
+  });
+
+  await step('Arabic: every button and link has an accessible name on each page', async () => {
+    for (const r of ['#/dashboard', '#/quran?hizb=5', '#/revision', '#/mistakes', '#/test', '#/progress', '#/settings']) {
+      await go(r);
+      const unnamed = $$('main button, main a, .rail a').filter((el) => !(el.textContent?.trim() || el.getAttribute('aria-label')));
+      check(unnamed.length === 0, `${r}: ${unnamed.length} unnamed controls`);
+    }
+  });
+
+  await step('The chosen language is saved and restored after a restart', async () => {
+    check((await store.settings.get<{ language: string }>('preferences'))?.language === 'ar', 'saved as ar');
+    if (store.kind === 'indexeddb') {
+      const fresh = await createIdbStore(dbName);
+      app = await makeApp(fresh, audio, root);
+      store = fresh;
+      check(app.prefs.language === 'ar' && document.documentElement.lang === 'ar', 'restored as ar');
+    }
+    await app.savePrefs({ ...app.prefs, language: 'en' });
+    check(document.documentElement.lang === 'en' && document.documentElement.dir === 'ltr', 'back to English');
+  });
+
+  // ------------------------------------------------------------ accounts (simulated Supabase)
+  const cloud = new FakeSupabase();
+  const CLOUD = { url: 'https://harness.supabase.co', anonKey: 'anon-key' };
+  const authClient = new AuthClient(CLOUD, cloud.fetch);
+  let session: AuthSession | null = null;
+  const fill = (sel: string, value: string) => {
+    const el = $<HTMLInputElement>(sel) as HTMLInputElement;
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const submitAuth = () => ($<HTMLButtonElement>('[data-key="auth-submit"]') as HTMLButtonElement).click();
+  const alertText = () => $('.auth-card [role="alert"]')?.textContent ?? '';
+
+  await step('Sign-in screen: validation, sign-up, wrong password, sign-in (English)', async () => {
+    const pending = showAuthScreen(root, { client: authClient, redirectTo: location.href, onLanguage: () => {} });
+    await waitFor(() => $('#auth-email'), 'sign-in form');
+    fill('#auth-email', 'not-an-email');
+    fill('#auth-password', 'secret-123');
+    submitAuth();
+    check(alertText().includes('valid email'), `email validation (${alertText()})`);
+    $<HTMLButtonElement>('[data-key="auth-to-signup"]')?.click();
+    await waitFor(() => $('#auth-password2'), 'sign-up form');
+    fill('#auth-email', 'reader@example.com');
+    fill('#auth-password', 'secret-123');
+    fill('#auth-password2', 'secret-124');
+    submitAuth();
+    check(alertText().includes('do not match'), `match validation (${alertText()})`);
+    fill('#auth-password2', 'secret-123');
+    submitAuth();
+    session = await pending;
+    check(session.user.email === 'reader@example.com', 'signed up and signed in');
+
+    const again = showAuthScreen(root, { client: authClient, redirectTo: location.href, onLanguage: () => {} });
+    await waitFor(() => $('#auth-email'), 'sign-in form');
+    fill('#auth-email', 'reader@example.com');
+    fill('#auth-password', 'wrong-pass');
+    submitAuth();
+    await waitFor(() => alertText().includes('not correct'), 'wrong password message');
+    fill('#auth-password', 'secret-123');
+    submitAuth();
+    check((await again).user.id === session.user.id, 'signed in with the same account');
+  });
+
+  await step('Signed in: marks sync to the account and appear on a second device', async () => {
+    if (!session) throw new Error('no session');
+    const s = session;
+    const mgr = new SessionManager({ client: authClient, session: s, onChange: () => {}, onExpired: () => {} });
+    const engine = new SyncEngine({ base: createMemoryStore(), remote: new SupabaseRecords(CLOUD, cloud.fetch, mgr), debounceMs: 50 });
+    await engine.init();
+    const account: AccountController = { email: s.user.email, sync: engine, sessionEnded: false, onSessionEnded: () => {}, signOut: async () => {}, signInAgain: () => {}, deleteAccount: () => engine.deleteAccount(), changePassword: async () => {} };
+    const services = createServices({ store: engine.store, clock: systemClock, ids: randomIds, fetcher: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
+    app = new App({ services, audioBackend: audio, audioCache: new AudioCache(engine.store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withEighths: true }) }, enableReminders: false, account });
+    await app.start(root);
+    await app.savePrefs({ ...app.prefs, language: 'en' });
+    check(($('.account-mini .acct-email')?.textContent ?? '') === 'reader@example.com', 'email shown in the sidebar');
+    await go('#/quran?hizb=5');
+    (await waitFor(() => $<HTMLButtonElement>('button.ayah-end[data-end="262"]'), '2:255 end marker')).click();
+    ($<HTMLButtonElement>('[data-key="markayah-262"]', await waitFor(dialog, 'ayah dialog')) as HTMLButtonElement).click();
+    const d = await waitFor(() => (dialog() && byText('button', 'Mark mistake', dialog() as ParentNode) ? dialog() : null), 'mark dialog');
+    byText('button', 'Mark mistake', d as ParentNode)?.click();
+    await waitFor(() => [...cloud.rows.values()].some((r) => r.tbl === 'mistakes' && (r.data as { globalIndex?: number } | null)?.globalIndex === 262), 'mistake uploaded (debounced)', 6000);
+    await waitFor(() => engine.status.state === 'synced' && engine.pendingCount() === 0, 'synced status');
+    await go('#/settings?section=account');
+    await waitFor(() => /Synced/.test($('#settings-account .sync-status')?.textContent ?? ''), 'account section shows sync status');
+
+    const laptop = new SyncEngine({ base: createMemoryStore(), remote: new SupabaseRecords(CLOUD, cloud.fetch, mgr) });
+    await laptop.init();
+    await laptop.syncNow({ full: true });
+    const ms = await laptop.store.mistakes.getAll();
+    check(ms.length === 1 && ms[0]?.globalIndex === 262, `second device restored ${ms.length} mistake(s)`);
+    check(![...cloud.rows.values()].some((r) => r.tbl === 'settings' && r.id === 'lastReminderDate'), 'device-only settings are not uploaded');
+  });
+
+  // Arabic showcases also use the light theme, so both themes can be reviewed visually.
+  if (showcase && showcaseLang === 'ar') await app.savePrefs({ ...app.prefs, language: 'ar', theme: 'light' });
+  if (showcase === 'login-screen') {
+    replaceAuthScreen();
+  } else if (showcase === 'live-session') {
     await go('#/revision');
     $<HTMLButtonElement>('[data-key="start-revision"]')?.click();
     await waitFor(() => $('[data-key="start-session"]'), 'preview');
@@ -400,9 +584,17 @@ async function run() {
   report(storeKind);
 }
 
+/** Showcase: the sign-in screen (not resolved; nothing is submitted). */
+function replaceAuthScreen() {
+  const root = document.getElementById('app') as HTMLElement;
+  void showAuthScreen(root, { client: new AuthClient({ url: 'https://harness.supabase.co', anonKey: 'anon-key' }, new FakeSupabase().fetch), redirectTo: location.href, onLanguage: () => {} });
+}
+
 function report(storeKind: string) {
   const passed = results.filter((r) => r.ok).length;
   const el = document.getElementById('harness-report') as HTMLElement;
+  el.dir = 'ltr';
+  el.lang = 'en';
   document.title = `HARNESS ${passed === results.length ? 'PASS' : 'FAIL'} ${passed}/${results.length}`;
   document.querySelector('.toast-region')?.replaceChildren();
   el.setAttribute('style', `font: 14px/1.5 system-ui; color: #1c2420; padding: 0.75rem 1rem; background: ${passed === results.length ? '#e1efe7' : '#fbe7e4'}; border-bottom: 2px solid ${passed === results.length ? '#2d6a4f' : '#b42318'}`);

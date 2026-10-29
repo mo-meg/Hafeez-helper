@@ -66,30 +66,5 @@ export function arabicDigits(n: number): string {
   return String(n).replace(/\d/g, (d) => String.fromCharCode(0x0660 + Number(d)));
 }
 
-export function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-export function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-export function formatDuration(ms: number): string {
-  const totalMin = Math.round(ms / 60_000);
-  if (totalMin < 1) return 'under a minute';
-  if (totalMin < 60) return `about ${totalMin} min`;
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `about ${h} h ${m} min`;
-}
-
-export function relativeDays(iso: string | null, now: Date): string {
-  if (!iso) return 'never';
-  const days = Math.round((now.getTime() - new Date(iso).getTime()) / 86_400_000);
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days === -1) return 'tomorrow';
-  return days > 0 ? `${days} days ago` : `in ${-days} days`;
-}
+// Locale-aware formatting lives in ./i18n; these re-exports keep existing view imports stable.
+export { fmtDate as formatDate, fmtDateTime as formatDateTime, fmtDuration as formatDuration, fmtRelativeDays as relativeDays } from './i18n/index.ts';

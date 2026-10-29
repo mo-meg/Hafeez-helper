@@ -2,10 +2,10 @@
 
 | Command | What it runs |
 |---|---|
-| `npm test` | 124 unit and integration tests (Node's built-in `node:test`, TypeScript run natively by Node ≥ 22.18) |
+| `npm test` | 145 unit and integration tests (Node's built-in `node:test`, TypeScript run natively by Node ≥ 22.18) |
 | `npm run typecheck` | `tsc` in strict mode (`noUncheckedIndexedAccess`, `erasableSyntaxOnly`, …) |
 | `npm run lint` | Project rules: no HTML injection, no `eval`, no `console.log`, no TODOs, and `src/core` must not touch the DOM or import UI/browser code |
-| `npm run test:e2e` | Builds the browser harness `dist-harness/harness.html`; open it in a browser to run 21 end-to-end journeys |
+| `npm run test:e2e` | Builds the browser harness `dist-harness/harness.html`; open it in a browser to run 30 end-to-end journeys (English, Arabic, accounts) |
 | `npm run test:data` | Checks the real dataset in `public/data` (after `npm run data:fetch`); skipped if absent |
 | `npm run verify` | lint, typecheck, tests, and production build |
 
@@ -22,12 +22,16 @@
 | `plan-dashboard-backup.test.ts` | 11 | One plan per date; session completion completes plan and resolves nothing; next-portion suggestion; dashboard zero state and real-history aggregation; backup round-trip, rejection of invalid/orphaned/future backups, merge semantics, wipe; demo data flagged and removable; preferences repair |
 | `test-mode.test.ts` | 12 | Auto "linking ayat" type for first words and its review interval; test cards: one per ayah, Quran order, unresolved by default; hide from the first marked word; transition/first-word/whole-ayah cards show the previous ayah (across surahs; none before 1:1); deterministic shuffle; hint/reveal and allowed answers; answers recorded, nothing resolved |
 | `session.test.ts` | 4 | Mistakes / full / combined session assembly; reminder decision; .ics generation |
+| `sync.test.ts` | 13 | Against a simulated Supabase server: local-only unless both config values are set; sign-up, sign-in, error codes (both GoTrue formats), email-confirmation flow, network errors; email-link fragment parsing; token refresh shared by concurrent callers and expired sessions; upload then restore on a second device; device-only settings stay local; deletions and clears propagate; pending offline edits are not overwritten; retry after 401; malformed or foreign rows ignored; delete account |
+| `i18n.test.ts` | 8 | Arabic catalog has exactly the English keys and only known placeholders; Arabic is the default (RTL); stored language survives, old/invalid values repair to Arabic; Arabic plural forms; localized references and portions; locale date formatting; no Quranic marks in UI catalogs |
 
 ## Browser end-to-end harness (`harness/harness.ts`)
 
 The harness bundles the **real UI and the real IndexedDB adapter** with a mocked audio
 backend (15 ms per "file") and synthetic placeholder text, then drives the DOM like a user.
-Result in this environment, from the in-app preview browser: **21/21 passed with IndexedDB**:
+Result in this environment, from the in-app preview browser: **30/30 passed with IndexedDB**.
+A fresh install is checked to start in Arabic (RTL); the established journeys 1–21 then switch to
+English and drive the UI by its English labels, and journeys 22–28 cover Arabic:
 
 1. Open Hizb 5 with verified boundaries (2:253 to 3:14), four quarters and eight eighths listed.
 2. Text is RTL.
@@ -50,9 +54,22 @@ Result in this environment, from the in-app preview browser: **21/21 passed with
 19. Test: two mistakes in 2:257 (words 2 and 4): reveal shows words 2–3 and keeps word 4 hidden; after answering, the second step reveals the rest; each mistake gets its own answer.
 20. Backup export/restore round-trip.
 21. Every button and link on each page (including Test) has an accessible name.
+22. A fresh install starts in Arabic: `<html lang="ar" dir="rtl">`, Arabic navigation and headings.
+23. Switching to Arabic keeps the route, marks and the Quran words (compared before/after); labels,
+    references and direction change; toasts move to the inline end.
+24. Arabic: mark a whole ayah through the localized dialogs.
+25. The playlist order is identical in Arabic and English; the session title follows the language.
+26. Switching language during playback keeps the session id, step index, completed plays and
+    status; controls are relabelled; playback continues after answering.
+27. Arabic: every button and link on each page has an accessible name.
+28. The chosen language is saved and restored after restarting the app on the same IndexedDB.
+29. Sign-in screen against a simulated Supabase: email and password-match validation, sign-up,
+    wrong-password message, sign-in.
+30. Signed in: a mistake marked in the UI is uploaded automatically, the account section shows
+    the sync status, and a second device restores the mistake; device-only settings are not uploaded.
 
 `showcase-*.html` files in `dist-harness/` run the same journeys and stop on a given screen for
-visual review.
+visual review; `showcase-*-ar.html` show the same screens in Arabic with the light theme.
 
 ## Not automated here
 
@@ -63,3 +80,6 @@ visual review.
   environment). Parsers are tested against the documented response shape; `npm run test:data`
   validates the real dataset once downloaded.
 * Docker image build was not run (no Docker in the build environment).
+* Sign-in and sync were tested against a simulated Supabase server (`tests/fixtures/fakeSupabase.ts`),
+  not a live project; `supabase/schema.sql` was not executed here. The GitHub Pages workflow was
+  not run from this environment.

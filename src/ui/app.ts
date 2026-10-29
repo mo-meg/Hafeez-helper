@@ -5,14 +5,17 @@ import { BUILTIN_RECITERS, findReciter, type ReciterSource } from '../core/audio
 import type { QuranDataState } from '../core/data/quranDataService.ts';
 import type { DailyPlan, Mistake, RecallOutcome, ReviewEvent, RevisionSession } from '../core/model.ts';
 import type { DivisionDataset } from '../core/quran/divisions.ts';
-import { formatRef } from '../core/quran/refs.ts';
 import type { QuranTextDataset } from '../core/quran/text.ts';
 import type { AyahRef } from '../core/quran/types.ts';
 import type { AppServices } from '../core/services.ts';
 import { buildSession, type BuiltSession, type SessionConfig } from '../core/session/sessionBuilder.ts';
 import type { Preferences } from '../core/settings/preferences.ts';
 import { localDateKey } from '../core/util/ids.ts';
+import { dir, getLocale, setLocale, t, type Locale, type MessageKey } from './i18n/index.ts';
+import { errorText, refLabel, scopeLabel } from './i18n/labels.ts';
 import { icon } from './components/icons.ts';
+import { languageSwitch as languageSwitchControl } from './components/languageSwitch.ts';
+import { syncStatusText, type AccountController } from './auth/account.ts';
 import { h, replaceChildren } from './dom.ts';
 import { dashboardView } from './views/dashboard.ts';
 import { mistakesView } from './views/mistakes.ts';
@@ -29,28 +32,38 @@ export interface AppDeps {
   readonly audioCache: AudioCache;
   readonly timers?: TimerApi;
   readonly isOnline: () => boolean;
-  /** Persistent notices shown on every page (e.g. storage fallback, synthetic fixture). */
+  /** Persistent notices shown on every page (already localized by the caller). */
   readonly notices?: readonly string[];
+  /** Set when IndexedDB could not be opened; shown as a localized notice on every page. */
+  readonly storageError?: string;
+  /** Signed-in account with cloud sync; absent in local-only mode. */
+  readonly account?: AccountController;
+  /** Called when the interface language changes (remembered for the sign-in screen). */
+  readonly onLanguageChange?: (l: Locale) => void;
   /** Synthetic data for the browser test harness only. */
   readonly fixture?: { readonly text: QuranTextDataset | null; readonly divisions: DivisionDataset };
   readonly enableReminders?: boolean;
 }
 
 export type RouteName = 'dashboard' | 'quran' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
-const NAV: ReadonlyArray<{ name: RouteName; label: string; icon: string }> = [
-  { name: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { name: 'quran', label: 'Quran', icon: 'quran' },
-  { name: 'revision', label: 'Daily revision', icon: 'revision' },
-  { name: 'mistakes', label: 'My mistakes', icon: 'mistakes' },
-  { name: 'test', label: 'Test', icon: 'test' },
-  { name: 'progress', label: 'Progress', icon: 'progress' },
-  { name: 'settings', label: 'Settings', icon: 'settings' },
+const NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
+  { name: 'dashboard', label: 'nav.dashboard', icon: 'dashboard' },
+  { name: 'quran', label: 'nav.quran', icon: 'quran' },
+  { name: 'revision', label: 'nav.revision', icon: 'revision' },
+  { name: 'mistakes', label: 'nav.mistakes', icon: 'mistakes' },
+  { name: 'test', label: 'nav.test', icon: 'test' },
+  { name: 'progress', label: 'nav.progress', icon: 'progress' },
+  { name: 'settings', label: 'nav.settings', icon: 'settings' },
 ];
+
+/** A session title that is computed at render time, so it follows the interface language. */
+export type Title = () => string;
 
 export interface ActiveSession {
   readonly id: string;
   readonly config: SessionConfig;
   readonly built: BuiltSession;
+  readonly title: Title;
   /** Latest recall outcome recorded in this session per ayah. */
   readonly outcomes: Map<number, RecallOutcome>;
   /** Completed plays per ayah in this session (playback evidence only). */
@@ -67,6 +80,7 @@ export class App {
   data: { mistakes: Mistake[]; reviews: ReviewEvent[]; sessions: RevisionSession[]; plans: DailyPlan[] } = { mistakes: [], reviews: [], sessions: [], plans: [] };
   route: { name: RouteName; params: URLSearchParams } = { name: 'dashboard', params: new URLSearchParams() };
   pending: SessionConfig | null = null;
+  pendingTitle: Title | null = null;
   active: ActiveSession | null = null;
   test: ActiveTest | null = null;
   readingPosition: AyahRef | null = null;
@@ -74,6 +88,8 @@ export class App {
   private dock!: HTMLElement;
   private toastRegion!: HTMLElement;
   private nav!: HTMLElement;
+  private topbar!: HTMLElement;
+  private skipLink!: HTMLAnchorElement;
   private noticeHost!: HTMLElement;
   private lastRouteKey = '';
 
@@ -93,8 +109,8 @@ export class App {
     this.quran = this.deps.fixture ? this.s.quran.useFixture(this.deps.fixture.text, this.deps.fixture.divisions) : await this.s.quran.init();
     this.readingPosition = (await this.s.store.settings.get<AyahRef>('readingPosition')) ?? null;
     await this.reloadData();
-    this.buildShell(root);
     this.applyAppearance();
+    this.buildShell(root);
     this.player.setRate(this.prefs.repeat.playbackRate);
     this.player.setPauseForAssessment(this.prefs.pauseForAssessment);
     this.player.subscribe(() => {
@@ -103,35 +119,101 @@ export class App {
     });
     this.player.onStepCompleted((step) => void this.onStepCompleted(step.item.globalIndex));
     this.setupMediaSession();
+    const account = this.deps.account;
+    if (account) {
+      account.sync.subscribe(() => this.updateSyncStatus());
+      account.sync.onRemoteChange = () => void this.reloadFromRemote();
+      account.onSessionEnded(() => this.renderChrome());
+    }
     window.addEventListener('hashchange', () => this.onRoute());
     this.onRoute();
     if (this.deps.enableReminders !== false) this.startReminderLoop();
   }
 
   private buildShell(root: HTMLElement) {
-    this.nav = h(
-      'nav',
-      { class: 'rail', 'aria-label': 'Main' },
-      h('div', { class: 'brand' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, 'ح'), h('span', { class: 'brand-name' }, 'Hafeez Helfer', h('span', { class: 'brand-sub' }, 'Hifz revision'))),
-      NAV.map((n) => h('a', { class: 'nav-link', href: `#/${n.name}`, dataset: { route: n.name } }, icon(n.icon), h('span', null, n.label))),
-      h('div', { class: 'rail-foot' }, 'Your data stays on this device.'),
-    );
+    this.nav = h('nav', { class: 'rail' });
+    this.topbar = h('header', { class: 'topbar' });
     this.noticeHost = h('div');
     this.main = h('main', { id: 'main', tabindex: '-1' });
-    this.dock = h('section', { class: 'dock', 'aria-label': 'Revision player', hidden: true });
+    this.dock = h('section', { class: 'dock', hidden: true });
     this.toastRegion = h('div', { class: 'toast-region', role: 'status', 'aria-live': 'polite' });
+    this.skipLink = h('a', { class: 'skip-link', href: '#main', onclick: (e: Event) => { e.preventDefault(); this.main.focus(); } });
+    replaceChildren(root, this.skipLink, this.topbar, h('div', { class: 'shell' }, this.nav, h('div', null, this.noticeHost, this.main)), this.dock, this.toastRegion);
+    this.renderChrome();
+  }
+
+  /** (Re)renders the language-dependent shell: navigation, top bar, notices. */
+  private renderChrome(): void {
+    const brand = () => h('div', { class: 'brand' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, 'ح'), h('span', { class: 'brand-name' }, t('app.name'), h('span', { class: 'brand-sub' }, t('app.tagline'))));
+    this.nav.setAttribute('aria-label', t('app.navLabel'));
     replaceChildren(
-      root,
-      h('a', { class: 'skip-link', href: '#main', onclick: (e: Event) => { e.preventDefault(); this.main.focus(); } }, 'Skip to content'),
-      h('div', { class: 'shell' }, this.nav, h('div', null, this.noticeHost, this.main)),
-      this.dock,
-      this.toastRegion,
+      this.nav,
+      brand(),
+      NAV.map((n) => h('a', { class: 'nav-link', href: `#/${n.name}`, dataset: { route: n.name } }, icon(n.icon), h('span', null, t(n.label)))),
+      h('div', { class: 'rail-foot' }, this.languageSwitch(), this.deps.account ? this.accountMini() : h('span', null, t('app.privacyFoot'))),
     );
+    replaceChildren(this.topbar, brand(), h('div', { class: 'row', style: { 'flex-wrap': 'nowrap' } }, this.deps.account ? h('a', { class: 'sync-dot', href: '#/settings?section=account' }) : null, this.languageSwitch()));
+    this.skipLink.textContent = t('app.skip');
+    this.dock.setAttribute('aria-label', t('app.playerLabel'));
     const notices = [...(this.deps.notices ?? [])];
-    if (this.quran.text?.dataset.synthetic || this.quran.divisions.synthetic) {
-      notices.push('Synthetic test data is loaded. The words shown are placeholders, not Quran text, and boundaries other than the verified juz/hizb anchors are not real.');
+    if (this.deps.storageError) notices.push(t('app.storageFallback', { detail: this.deps.storageError }));
+    if (this.quran.text?.dataset.synthetic || this.quran.divisions.synthetic) notices.push(t('app.syntheticNotice'));
+    const account = this.deps.account;
+    const ended = account?.sessionEnded
+      ? h('div', { class: 'notice warn', role: 'alert' }, h('p', null, t('acct.sessionEnded')), h('button', { type: 'button', class: 'primary', onclick: () => account.signInAgain() }, t('acct.signInAgain')))
+      : null;
+    replaceChildren(this.noticeHost, notices.length || ended ? h('div', { class: 'shell-notices stack' }, ended, notices.map((n) => h('div', { class: 'notice warn', role: 'note' }, n))) : null);
+    this.updateSyncStatus();
+  }
+
+  /** Email and live sync status in the sidebar footer. */
+  private accountMini(): HTMLElement {
+    const email = this.deps.account?.email ?? '';
+    return h('a', { class: 'account-mini', href: '#/settings?section=account' }, h('span', { class: 'acct-email', dir: 'ltr', title: email }, email), h('span', { class: 'sync-status' }));
+  }
+
+  /** Updates every live sync-status element without re-rendering (keeps form input intact). */
+  updateSyncStatus(): void {
+    const account = this.deps.account;
+    if (!account) return;
+    const s = account.sync.status;
+    const text = syncStatusText(s, this.now());
+    for (const el of document.querySelectorAll<HTMLElement>('.sync-status')) {
+      el.textContent = text;
+      el.dataset.state = s.state;
     }
-    replaceChildren(this.noticeHost, notices.map((n) => h('div', { class: 'notice warn', role: 'note', style: { margin: '1rem 2rem 0' } }, n)));
+    for (const el of document.querySelectorAll<HTMLElement>('.sync-dot')) {
+      el.dataset.state = s.state;
+      el.title = text;
+      el.setAttribute('aria-label', `${t('sync.label')}: ${text}`);
+    }
+  }
+
+  /** Remote changes arrived: reload preferences and data, keeping the current screen. */
+  private async reloadFromRemote(): Promise<void> {
+    const before = this.prefs.language;
+    this.prefs = await this.s.preferences.load();
+    this.readingPosition = (await this.s.store.settings.get<AyahRef>('readingPosition')) ?? this.readingPosition;
+    this.applyAppearance();
+    this.player.setPauseForAssessment(this.prefs.pauseForAssessment);
+    if (before !== this.prefs.language) {
+      this.deps.onLanguageChange?.(this.prefs.language);
+      this.renderChrome();
+    }
+    await this.refresh();
+  }
+
+  /** Arabic / English segmented control. Each option is labelled in its own language. */
+  languageSwitch(): HTMLElement {
+    return languageSwitchControl(getLocale(), (l) => void this.setLanguage(l));
+  }
+
+  /** Switches the interface language. Data, route, session and playback are untouched. */
+  async setLanguage(locale: Locale): Promise<void> {
+    if (locale === this.prefs.language) return;
+    await this.act(() => this.savePrefs({ ...this.prefs, language: locale }));
+    this.toast(t('lang.changed'));
+    document.querySelector<HTMLElement>(`[data-key="lang-${locale}"]`)?.focus({ preventScroll: true });
   }
 
   async reloadData(): Promise<void> {
@@ -173,10 +255,11 @@ export class App {
     try {
       view = this.view();
     } catch (e) {
-      view = h('div', { class: 'notice error', role: 'alert' }, h('p', null, `This page could not be displayed: ${e instanceof Error ? e.message : String(e)}`));
+      view = h('div', { class: 'notice error', role: 'alert' }, h('p', null, t('app.pageError', { detail: errorText(e) })));
     }
     replaceChildren(this.main, view);
-    document.title = `${NAV.find((n) => n.name === this.route.name)?.label ?? 'Revision session'} | Hafeez Helfer`;
+    const navItem = NAV.find((n) => n.name === this.route.name);
+    document.title = t('app.titleSuffix', { page: t(navItem ? navItem.label : 'nav.session') });
     if (keep) {
       window.scrollTo(0, scrollY);
       if (focusKey) this.main.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
@@ -223,7 +306,7 @@ export class App {
       if (success) this.toast(success);
       return true;
     } catch (e) {
-      this.toast(e instanceof Error ? e.message : String(e), 'error');
+      this.toast(errorText(e), 'error');
       return false;
     }
   }
@@ -245,8 +328,14 @@ export class App {
   }
 
   async savePrefs(p: Preferences): Promise<void> {
+    const languageChanged = p.language !== this.prefs.language;
     this.prefs = await this.s.preferences.save(p);
     this.applyAppearance();
+    if (languageChanged) this.deps.onLanguageChange?.(this.prefs.language);
+    if (languageChanged && this.main) {
+      this.renderChrome();
+      this.render(true);
+    }
     this.player.setRate(this.prefs.repeat.playbackRate);
     this.player.setPauseForAssessment(this.prefs.pauseForAssessment);
   }
@@ -255,6 +344,9 @@ export class App {
     const dark = this.prefs.theme === 'dark' || (this.prefs.theme === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     document.documentElement.style.setProperty('--quran-scale', String(this.prefs.fontScale));
+    setLocale(this.prefs.language);
+    document.documentElement.lang = this.prefs.language;
+    document.documentElement.dir = dir(this.prefs.language);
   }
 
   async setReadingPosition(ref: AyahRef): Promise<void> {
@@ -263,12 +355,18 @@ export class App {
   }
 
   // ---------------------------------------------------------------- sessions
-  prepare(config: SessionConfig): void {
+  /**
+   * Opens the session preview. `title` is evaluated at render time so it follows the interface
+   * language; `config.label` keeps a stable English label for stored records.
+   */
+  prepare(config: SessionConfig, title?: Title): void {
     if (this.active && !this.active.ended) {
-      this.toast('Finish or end the current session before preparing a new one.', 'error');
+      this.toast(t('ses.finishFirst'), 'error');
       this.navigate('#/session');
       return;
     }
+    const scope = config.scope;
+    this.pendingTitle = title ?? (() => scopeLabel(scope, this.quran.index));
     this.pending = config;
     this.active = null;
     this.navigate('#/session');
@@ -283,7 +381,7 @@ export class App {
     if (!config) return;
     const built = this.build(config);
     if (built.steps.length === 0) {
-      this.toast('There is nothing to play for this selection.', 'error');
+      this.toast(t('ses.nothing'), 'error');
       return;
     }
     const session = await this.s.plans.startSession({
@@ -295,8 +393,11 @@ export class App {
       mistakeAyahIndexes: built.mistakeAyahIndexes,
       plannedSteps: built.steps.length,
     });
-    this.active = { id: session.id, config, built, outcomes: new Map(), plays: new Map(), ended: false };
+    const scope = config.scope;
+    const title = this.pendingTitle ?? (() => scopeLabel(scope, this.quran.index));
+    this.active = { id: session.id, config, built, title, outcomes: new Map(), plays: new Map(), ended: false };
     this.pending = null;
+    this.pendingTitle = null;
     this.player.setRate(config.repeat.playbackRate);
     this.player.setSteps(built.steps);
     await this.reloadData();
@@ -320,7 +421,7 @@ export class App {
     const ok = await this.act(async () => {
       await this.s.mistakes.recordAyahReview(ref, outcome, { sessionId: a?.id ?? null, repetitions: a?.plays.get(globalIndex) ?? 0 });
       a?.outcomes.set(globalIndex, outcome);
-    }, `Recorded for ${formatRef(ref)}.`);
+    }, t('ses.recordedFor', { ref: refLabel(ref) }));
     if (ok && this.player.state.status === 'awaiting_assessment') await this.player.continueAfterAssessment();
     await this.refresh();
   }
@@ -332,7 +433,7 @@ export class App {
     await this.act(async () => {
       if (completed) await this.s.plans.completeSession(a.id);
       else await this.s.plans.abandonSession(a.id);
-    }, completed ? 'Session completed. Your mistakes keep their current status.' : 'Session ended.');
+    }, completed ? t('ses.completedToast') : t('ses.endedToast'));
     a.ended = true;
     await this.refresh();
   }
@@ -346,13 +447,15 @@ export class App {
     if (!show) return;
     const cur = st.current;
     const playing = st.status === 'playing' || st.status === 'gap' || st.status === 'loading';
+    const pct = st.steps.length ? Math.round((100 * Math.min(st.completedSteps, st.steps.length)) / st.steps.length) : 0;
     replaceChildren(
       this.dock,
-      h('div', { class: 'info' }, h('strong', null, cur ? formatRef(cur.item.ref) : 'Revision'), h('span', { class: 'muted' }, cur ? `Repetition ${cur.repetition} of ${cur.repetitions}` : '', st.status === 'error' ? ' (audio problem, open the session)' : '')),
-      h('button', { class: 'icon quiet', 'aria-label': 'Previous ayah', onclick: () => void this.player.prev() }, icon('prev')),
-      h('button', { class: 'icon primary', 'aria-label': playing ? 'Pause' : 'Play', onclick: () => void this.player.togglePlay() }, icon(playing ? 'pause' : 'play')),
-      h('button', { class: 'icon quiet', 'aria-label': 'Next ayah', onclick: () => void this.player.next() }, icon('next')),
-      h('a', { class: 'btn', href: '#/session' }, 'Open session'),
+      h('div', { class: 'progress-track', role: 'progressbar', 'aria-label': t('ses.progress'), 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct) }, h('span', { style: { width: `${pct}%` } })),
+      h('div', { class: 'info' }, h('strong', null, cur ? refLabel(cur.item.ref) : t('dock.revision')), h('span', { class: 'muted' }, cur ? t('ses.repetition', { n: cur.repetition, total: cur.repetitions }) : '', st.status === 'error' ? t('dock.audioProblem') : '')),
+      h('button', { class: 'icon quiet', 'aria-label': t('player.prev'), title: t('player.prev'), onclick: () => void this.player.prev() }, icon('prev')),
+      h('button', { class: 'icon primary', 'aria-label': playing ? t('player.pause') : t('player.play'), title: playing ? t('player.pause') : t('player.play'), onclick: () => void this.player.togglePlay() }, icon(playing ? 'pause' : 'play')),
+      h('button', { class: 'icon quiet', 'aria-label': t('player.next'), title: t('player.next'), onclick: () => void this.player.next() }, icon('next')),
+      h('a', { class: 'btn', href: '#/session' }, t('dock.open')),
     );
   }
 
@@ -370,7 +473,7 @@ export class App {
     this.player.subscribe((st) => {
       const cur = st.current;
       if (cur && typeof MediaMetadata !== 'undefined') {
-        ms.metadata = new MediaMetadata({ title: formatRef(cur.item.ref), artist: this.reciter().name, album: `Repetition ${cur.repetition}/${cur.repetitions}` });
+        ms.metadata = new MediaMetadata({ title: refLabel(cur.item.ref), artist: this.reciter().name, album: t('ses.repetition', { n: cur.repetition, total: cur.repetitions }) });
       }
     });
   }
@@ -385,7 +488,7 @@ export class App {
       const last = (await this.s.store.settings.get<string>('lastReminderDate')) ?? null;
       if (shouldNotify({ enabled: true, time: r.time, todayCompleted: plan?.status === 'completed', lastNotifiedDate: last, today, now: this.now() })) {
         await this.s.store.settings.set('lastReminderDate', today);
-        new Notification('Time for your Quran revision', { body: plan ? 'Your daily assignment is waiting.' : 'Set today’s portion and start your revision.', tag: 'hafeez-daily' });
+        new Notification(t('reminder.title'), { body: plan ? t('reminder.bodyPlan') : t('reminder.bodyNoPlan'), tag: 'hafeez-daily', lang: getLocale(), dir: dir() });
       }
     };
     void check();

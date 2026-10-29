@@ -9,6 +9,13 @@ No account, no tracking, and no AI service required. Your data stays on your dev
 
 ## What it does
 
+* **Accounts and synced history** (optional at build time): sign in with email and password and
+  your mistakes, answers and plans follow you to any device, while the app keeps working offline.
+  Free hosting on GitHub Pages with a free Supabase project; see [docs/DEPLOY.md](docs/DEPLOY.md).
+  Without Supabase settings the app runs local-only with no sign-in.
+* **Arabic and English interface** (Arabic by default, right-to-left; English left-to-right).
+  Switch any time from the sidebar, the top bar on phones, or Settings; your choice is saved on
+  the device. The Quran text is always shown exactly as supplied by the verified source.
 * **Quran reader** with Uthmani text, right-to-left, adjustable size, light and dark themes.
   Navigate by surah, ayah, juz, hizb, quarter, eighth (if imported) and page. A division panel
   shows the exact start and end of the portion, its quarters and eighths with their starting
@@ -68,6 +75,12 @@ the reader lists ayat by reference and you can still mark ayat and listen.
 
 To look around before using it for real: *Settings → Privacy, backup and data → Load demo data*.
 
+### Publish on GitHub Pages (free) with accounts
+
+Follow [docs/DEPLOY.md](docs/DEPLOY.md): push to GitHub, create a free Supabase project, run
+`supabase/schema.sql`, add two repository variables, and the included workflow builds, tests and
+publishes the site.
+
 ### Docker
 
 ```bash
@@ -109,10 +122,15 @@ src/
     dashboard/          aggregation
     storage/            Store interface, in-memory store, backup/restore with validation
     settings/           preferences schema
-  browser/              IndexedDB store, HTML audio backend, offline audio cache, reminders
+    sync/               Supabase sign-in client and local-first sync engine (HTTP injected)
+  browser/              IndexedDB store, HTML audio backend, offline audio cache, reminders, session storage
   ui/                   tiny DOM helper, app controller, views, components, styles
+    i18n/               interface translations (locales/ar.ts, locales/en.ts), Intl formatting, localized labels
+    auth/               sign-in screens and account controller
 harness/                in-browser end-to-end journeys
 tests/                  node:test unit/integration tests and synthetic fixtures
+supabase/               database schema (one table with Row Level Security)
+.github/workflows/      GitHub Pages deployment
 scripts/                build, serve, lint, data fetch
 docs/                   ADR, data sources, scoring, privacy, research, testing
 ```
@@ -120,6 +138,8 @@ docs/                   ADR, data sources, scoring, privacy, research, testing
 ## Documentation
 
 * [Architecture decision record](docs/ADR-001-architecture.md)
+* [Interface design and Arabic/English localization](docs/ADR-002-ui-and-i18n.md)
+* [Publish for free: GitHub Pages + Supabase accounts](docs/DEPLOY.md)
 * [Quran data and audio: provenance, verification, licences](docs/DATA_SOURCES.md)
 * [Review policy, scheduler and quality score](docs/SCORING_AND_SCHEDULING.md)
 * [Privacy model](docs/PRIVACY.md)
@@ -143,7 +163,9 @@ add your own with a URL template such as `https://host/path/{surah3}{ayah3}.mp3`
 * **Not exercised in the build environment** (no internet, Docker or browser automation available):
   real AlQuran.cloud downloads, real audio playback, and Docker builds.
   See [docs/TESTING.md](docs/TESTING.md).
-* No sync between devices (use backup/restore). No speech recognition.
+* Sync between devices needs the optional Supabase setup (otherwise use backup/restore). The
+  sign-in and sync code is tested against a simulated Supabase server; it was not run against a
+  live project from the build environment. No speech recognition.
 
 ## Roadmap
 

@@ -8,20 +8,35 @@ import * as esbuild from 'esbuild';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
+
+// Optional cloud accounts (Supabase). Read from the environment or a local .env file; when both
+// are empty the app is built in local-only mode. The anon key is public by design (RLS protects data).
+try {
+  process.loadEnvFile(join(root, '.env'));
+} catch {
+  /* no .env file */
+}
+const cloudDefine = {
+  __CLOUD_URL__: JSON.stringify(process.env.HAFEEZ_SUPABASE_URL ?? ''),
+  __CLOUD_ANON_KEY__: JSON.stringify(process.env.HAFEEZ_SUPABASE_ANON_KEY ?? ''),
+};
 const harness = args.has('--harness');
 
-const SHOWCASES = { '': 'harness', dashboard: '#/dashboard', quran: '#/quran?hizb=5', revision: '#/revision', mistakes: '#/mistakes', test: 'live-test', progress: '#/progress', settings: '#/settings', session: 'live-session' };
+const SHOWCASES = { '': 'harness', dashboard: '#/dashboard', quran: '#/quran?hizb=5', revision: '#/revision', mistakes: '#/mistakes', test: 'live-test', progress: '#/progress', settings: '#/settings', session: 'live-session', login: 'login-screen' };
+/** Arabic (RTL) variants of the showcase screens. */
+const AR_SHOWCASES = ['dashboard', 'quran', 'revision', 'mistakes', 'test', 'progress', 'settings', 'session', 'login'];
 
 async function buildHarness() {
   const out = join(root, 'dist-harness');
   // Outputs have fixed names and are overwritten in place (no deletion needed).
   await mkdir(out, { recursive: true });
-  for (const [name, route] of Object.entries(SHOWCASES)) await buildHarnessPage(out, name, name ? route : '');
+  for (const [name, route] of Object.entries(SHOWCASES)) await buildHarnessPage(out, name, name ? route : '', 'en');
+  for (const name of AR_SHOWCASES) await buildHarnessPage(out, `${name}-ar`, SHOWCASES[name], 'ar');
 }
 
-async function buildHarnessPage(out, name, showcase) {
+async function buildHarnessPage(out, name, showcase, lang) {
   const res = await esbuild.build({
-    define: showcase ? { SHOWCASE: JSON.stringify(showcase) } : {},
+    define: showcase ? { SHOWCASE: JSON.stringify(showcase), SHOWCASE_LANG: JSON.stringify(lang) } : {},
     entryPoints: [join(root, 'harness/harness.ts')],
     bundle: true,
     format: 'esm',
@@ -60,6 +75,7 @@ async function buildApp() {
   await mkdir(out, { recursive: true });
   const options = {
     entryPoints: [join(root, 'src/main.ts')],
+    define: cloudDefine,
     bundle: true,
     format: 'esm',
     target: 'es2022',
@@ -88,6 +104,7 @@ async function buildApp() {
   }
   await esbuild.build(options);
   await copyPublic();
+  console.log(cloudDefine.__CLOUD_URL__ !== '""' ? 'Cloud accounts: enabled (sign-in required).' : 'Cloud accounts: not configured (local-only mode).');
   const listing = await readdir(out);
   console.log(`Built dist/: ${listing.join(', ')}`);
 }

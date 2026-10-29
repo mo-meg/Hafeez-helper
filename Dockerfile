@@ -10,6 +10,10 @@ COPY package.json package-lock.json* ./
 RUN npm install --no-audit --no-fund
 COPY . .
 ARG FETCH_QURAN_DATA=0
+# Optional cloud accounts (public values, see docs/DEPLOY.md); empty = local-only mode.
+ARG HAFEEZ_SUPABASE_URL=
+ARG HAFEEZ_SUPABASE_ANON_KEY=
+ENV HAFEEZ_SUPABASE_URL=$HAFEEZ_SUPABASE_URL HAFEEZ_SUPABASE_ANON_KEY=$HAFEEZ_SUPABASE_ANON_KEY
 RUN if [ "$FETCH_QURAN_DATA" = "1" ]; then npm run data:fetch; fi
 RUN npm run lint && npm run typecheck && npm test && npm run build
 

@@ -1,12 +1,14 @@
 import { filterMistakes, type MistakeFilter } from '../../core/mistakes/filters.ts';
-import { CATEGORY_LABELS, MISTAKE_CATEGORIES, MISTAKE_STATUSES, STATUS_LABELS, isUnresolved, type Mistake, type MistakeCategory, type MistakeStatus } from '../../core/model.ts';
+import { MISTAKE_CATEGORIES, MISTAKE_STATUSES, isUnresolved, type Mistake, type MistakeCategory, type MistakeStatus } from '../../core/model.ts';
 import { effectiveDueDate, isDue } from '../../core/review/scheduler.ts';
-import { describeScope, scopeIntervals, type RevisionScope } from '../../core/quran/scope.ts';
-import { SURAHS, surahInfo } from '../../core/quran/surahs.ts';
+import { scopeIntervals, type RevisionScope } from '../../core/quran/scope.ts';
+import { SURAHS } from '../../core/quran/surahs.ts';
 import type { App } from '../app.ts';
 import { openMarkDialog, statusChip } from '../components/markDialog.ts';
 import { scopePicker } from '../components/scopePicker.ts';
 import { formatDate, h, relativeDays } from '../dom.ts';
+import { fmtDateKey, fmtList, t, tn } from '../i18n/index.ts';
+import { categoryLabel, errorText, scopeLabel, statusLabel, surahName, surahOption } from '../i18n/labels.ts';
 
 interface FilterState {
   status: 'unresolved' | 'all' | MistakeStatus;
@@ -28,7 +30,7 @@ function toFilter(app: App): { filter: MistakeFilter; error: string | null } {
     try {
       scope = scopeIntervals(state.scope, app.quran.index);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorText(e);
     }
   }
   const statuses: MistakeStatus[] | undefined = state.status === 'all' ? undefined : state.status === 'unresolved' ? MISTAKE_STATUSES.filter(isUnresolved) : [state.status];
@@ -46,14 +48,15 @@ function toFilter(app: App): { filter: MistakeFilter; error: string | null } {
   };
 }
 
-function describeFilter(app: App): string {
+/** Session title for the current filters; evaluated at render time so it follows the language. */
+function describeFilter(app: App, f: FilterState): string {
   const parts: string[] = [];
-  if (state.scope) parts.push(describeScope(state.scope, app.quran.index));
-  if (state.surah) parts.push(surahInfo(Number(state.surah)).nameTransliterated);
-  if (state.category) parts.push(CATEGORY_LABELS[state.category].toLowerCase());
-  if (state.from || state.to) parts.push(`marked ${state.from || '…'} to ${state.to || '…'}`);
-  if (state.dueOnly) parts.push('due now');
-  return parts.length ? `My mistakes: ${parts.join(', ')}` : 'My mistakes';
+  if (f.scope) parts.push(scopeLabel(f.scope, app.quran.index));
+  if (f.surah) parts.push(surahName(Number(f.surah)));
+  if (f.category) parts.push(categoryLabel(f.category));
+  if (f.from || f.to) parts.push(t('mis.markedRange', { from: f.from ? fmtDateKey(f.from) : '…', to: f.to ? fmtDateKey(f.to) : '…' }));
+  if (f.dueOnly) parts.push(t('mis.dueNowPart'));
+  return parts.length ? t('mis.labelWith', { parts: fmtList(parts) }) : t('mis.title');
 }
 
 function row(app: App, m: Mistake): HTMLElement {
@@ -64,19 +67,19 @@ function row(app: App, m: Mistake): HTMLElement {
   return h(
     'div',
     { class: 'mistake-row' },
-    h('div', null, h('div', { class: 'ref' }, `${m.surah}:${m.ayah}`), h('small', { class: 'muted' }, surahInfo(m.surah).nameTransliterated), m.word ? h('div', { class: `word-ar${m.status === 'resolved' ? ' resolved' : ''}`, lang: 'ar', dir: 'rtl' }, m.word.tokenText) : h('div', null, h('small', null, 'Whole ayah'))),
+    h('div', null, h('div', { class: 'ref', dir: 'ltr', style: { 'text-align': 'start' } }, `${m.surah}:${m.ayah}`), h('small', { class: 'muted' }, surahName(m.surah)), m.word ? h('div', { class: `word-ar${m.status === 'resolved' ? ' resolved' : ''}`, lang: 'ar', dir: 'rtl' }, m.word.tokenText) : h('div', null, h('small', null, t('mis.wholeAyah')))),
     h(
       'div',
       null,
-      h('div', { class: 'chips' }, statusChip(m), h('span', { class: 'chip cat' }, CATEGORY_LABELS[m.category]), m.demo ? h('span', { class: 'chip demo' }, 'Demo') : null, mismatch ? h('span', { class: 'chip status-under_review', title: 'The loaded text edition differs from the one used when this word was marked.' }, 'Edition changed') : null),
-      h('small', { class: 'muted' }, `Marked ${formatDate(m.createdAt)}. Reviewed ${m.reviewCount}× (last ${relativeDays(m.lastReviewedAt, now)}). ${m.confidence ? `Confidence ${m.confidence}/5. ` : ''}${due ? (due <= now ? 'Due now.' : `Next review ${relativeDays(due.toISOString(), now)}.`) : ''}`),
-      m.note ? h('p', { class: 'note' }, m.note) : null,
+      h('div', { class: 'chips' }, statusChip(m), h('span', { class: 'chip cat' }, categoryLabel(m.category)), m.demo ? h('span', { class: 'chip demo' }, t('common.demo')) : null, mismatch ? h('span', { class: 'chip status-under_review', title: t('mis.editionChangedHint') }, t('mis.editionChanged')) : null),
+      h('small', { class: 'muted' }, [t('mis.summaryMarked', { date: formatDate(m.createdAt) }), t('mis.summaryReviewed', { count: m.reviewCount, when: relativeDays(m.lastReviewedAt, now) }), m.confidence ? t('mis.summaryConfidence', { n: m.confidence }) : '', due ? (due <= now ? t('mis.summaryDue') : t('mis.summaryNext', { when: relativeDays(due.toISOString(), now) })) : ''].filter(Boolean).join(' ')),
+      m.note ? h('p', { class: 'note', dir: 'auto' }, m.note) : null,
     ),
     h(
       'div',
       { class: 'row' },
-      h('a', { class: 'btn', href: `#/quran?surah=${m.surah}&focus=${m.globalIndex}` }, 'Open in reader'),
-      h('button', { type: 'button', 'data-key': `details-${m.id}`, onclick: () => void openMarkDialog(app, { ref: m, word: m.word }) }, 'Details'),
+      h('a', { class: 'btn', href: `#/quran?surah=${m.surah}&focus=${m.globalIndex}` }, t('mis.openReader')),
+      h('button', { type: 'button', 'data-key': `details-${m.id}`, onclick: () => void openMarkDialog(app, { ref: m, word: m.word }) }, t('mis.details')),
     ),
   );
 }
@@ -100,65 +103,66 @@ export function mistakesView(app: App): Node {
   return h(
     'div',
     null,
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'My mistakes'), h('p', { class: 'muted' }, 'Everything you have marked, in Quran order. Resolved mistakes stay in your history.'))),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, t('mis.title')), h('p', { class: 'muted' }, t('mis.intro')))),
     h(
       'section',
       { class: 'panel' },
-      h('h2', null, 'Choose what to revise'),
+      h('h2', null, t('mis.choose')),
       h(
         'div',
         { class: 'fields' },
-        sel('status', [['unresolved', 'Unresolved'], ['all', 'All, including resolved'], ...MISTAKE_STATUSES.map((s) => [s, STATUS_LABELS[s]] as [string, string])], 'Status'),
-        sel('category', [['', 'All types'], ...MISTAKE_CATEGORIES.map((c) => [c, CATEGORY_LABELS[c]] as [string, string])], 'Type'),
-        sel('surah', [['', 'All surahs'], ...SURAHS.map((s) => [String(s.number), `${s.number}. ${s.nameTransliterated}`] as [string, string])], 'Surah'),
-        h('label', { class: 'field' }, h('span', null, 'Marked from'), h('input', { type: 'date', value: state.from, 'data-key': 'f-from', onchange: (e: Event) => { state.from = (e.target as HTMLInputElement).value; rerender(); } })),
-        h('label', { class: 'field' }, h('span', null, 'Marked until'), h('input', { type: 'date', value: state.to, 'data-key': 'f-to', onchange: (e: Event) => { state.to = (e.target as HTMLInputElement).value; rerender(); } })),
-        sel('minConfidence', [['', 'Any confidence'], ['1', '1 or more'], ['2', '2 or more'], ['3', '3 or more'], ['4', '4 or more'], ['5', '5']], 'Confidence'),
+        sel('status', [['unresolved', t('mis.fUnresolved')], ['all', t('mis.fAll')], ...MISTAKE_STATUSES.map((s) => [s, statusLabel(s)] as [string, string])], t('common.status')),
+        sel('category', [['', t('mis.fAllTypes')], ...MISTAKE_CATEGORIES.map((c) => [c, categoryLabel(c)] as [string, string])], t('common.type')),
+        sel('surah', [['', t('mis.fAllSurahs')], ...SURAHS.map((s) => [String(s.number), surahOption(s.number)] as [string, string])], t('common.surah')),
+        h('label', { class: 'field' }, h('span', null, t('mis.fFrom')), h('input', { type: 'date', value: state.from, 'data-key': 'f-from', onchange: (e: Event) => { state.from = (e.target as HTMLInputElement).value; rerender(); } })),
+        h('label', { class: 'field' }, h('span', null, t('mis.fTo')), h('input', { type: 'date', value: state.to, 'data-key': 'f-to', onchange: (e: Event) => { state.to = (e.target as HTMLInputElement).value; rerender(); } })),
+        sel('minConfidence', [['', t('mis.fAnyConfidence')], ...[1, 2, 3, 4].map((n) => [String(n), t('mis.fConfidenceMin', { n })] as [string, string]), ['5', '5']], t('mis.fConfidence')),
       ),
-      h('label', { class: 'choice' }, h('input', { type: 'checkbox', checked: state.dueOnly, 'data-key': 'f-due', onchange: (e: Event) => { state.dueOnly = (e.target as HTMLInputElement).checked; rerender(); } }), h('span', null, 'Only mistakes due for review now')),
+      h('label', { class: 'choice' }, h('input', { type: 'checkbox', checked: state.dueOnly, 'data-key': 'f-due', onchange: (e: Event) => { state.dueOnly = (e.target as HTMLInputElement).checked; rerender(); } }), h('span', null, t('mis.fDue'))),
       h(
         'fieldset',
         { style: { 'margin-top': '0.5rem' } },
-        h('legend', null, 'Portion'),
-        h('p', { class: 'muted', style: { margin: '0 0 0.5rem' } }, state.scope ? `Limited to ${describeScope(state.scope, app.quran.index)}.` : 'All of the Quran.'),
+        h('legend', null, t('common.portion')),
+        h('p', { class: 'muted', style: { margin: '0 0 0.5rem' } }, state.scope ? t('mis.limited', { portion: scopeLabel(state.scope, app.quran.index) }) : t('mis.allQuran')),
         picker.el,
         h(
           'div',
           { class: 'row', style: { 'margin-top': '0.5rem' } },
-          h('button', { type: 'button', onclick: () => { const r = picker.read(); if ('error' in r) app.toast(r.error, 'error'); else { state.scope = r.scope.type === 'all' ? null : r.scope; rerender(); } } }, 'Apply portion'),
-          todayPlan ? h('button', { type: 'button', onclick: () => { state.scope = todayPlan.scope; rerender(); } }, `Today’s portion (${describeScope(todayPlan.scope, app.quran.index)})`) : null,
-          state.scope ? h('button', { type: 'button', class: 'quiet', onclick: () => { state.scope = null; rerender(); } }, 'Whole Quran') : null,
+          h('button', { type: 'button', onclick: () => { const r = picker.read(); if ('error' in r) app.toast(r.error, 'error'); else { state.scope = r.scope.type === 'all' ? null : r.scope; rerender(); } } }, t('mis.apply')),
+          todayPlan ? h('button', { type: 'button', onclick: () => { state.scope = todayPlan.scope; rerender(); } }, t('mis.todayPortion', { portion: scopeLabel(todayPlan.scope, app.quran.index) })) : null,
+          state.scope ? h('button', { type: 'button', class: 'quiet', onclick: () => { state.scope = null; rerender(); } }, t('mis.wholeQuran')) : null,
         ),
       ),
       error ? h('p', { role: 'alert', style: { color: 'var(--mistake)' } }, error) : null,
       h(
         'div',
         { class: 'row spread', style: { 'margin-top': '1rem' } },
-        h('strong', null, `${list.length} mistake${list.length === 1 ? '' : 's'} on ${ayat} ayah${ayat === 1 ? '' : 's'}`),
+        h('strong', null, tn('mis.count', list.length, { ayat: tn('mis.ayatCount', ayat) })),
         h('button', {
           type: 'button', class: 'primary', disabled: list.length === 0, 'data-key': 'revise-these',
           onclick: () => {
             const p = app.prefs;
+            const snapshot: FilterState = { ...state };
             app.prepare({
               mode: 'mistakes',
               scope: state.scope ?? { type: 'all' },
               planId: null,
-              label: describeFilter(app),
+              label: 'My mistakes',
               options: { mistakeIds: list.map((m) => m.id), statuses: statusesForSession, contextBefore: p.contextBefore, contextAfter: p.contextAfter, contextAcrossSurahs: p.contextAcrossSurahs, wordPractice: p.wordPractice },
               repeat: p.repeat,
               portionAyahRepeat: p.portionAyahRepeat,
               reciterId: p.reciterId,
-            });
+            }, () => describeFilter(app, snapshot));
           },
-        }, 'Listen to these mistakes'),
+        }, t('mis.listen')),
       ),
     ),
     h(
       'section',
       { class: 'panel' },
       list.length === 0
-        ? h('div', { class: 'empty' }, h('p', null, app.data.mistakes.length ? 'No mistakes match these filters.' : 'You have not marked any mistakes yet. While reading, tap a word or an ayah number to mark it.'), app.data.mistakes.length ? null : h('a', { class: 'btn primary', href: '#/quran' }, 'Open the Quran'))
-        : [...bySurah.entries()].map(([s, ms]) => h('div', null, h('h3', { style: { 'margin-top': '0.75rem' } }, `${s}. ${surahInfo(s).nameTransliterated} `, h('span', { lang: 'ar', class: 'muted' }, surahInfo(s).nameArabic)), ms.map((m) => row(app, m)))),
+        ? h('div', { class: 'empty' }, h('p', null, app.data.mistakes.length ? t('mis.noMatch') : t('mis.none')), app.data.mistakes.length ? null : h('a', { class: 'btn primary', href: '#/quran' }, t('common.openQuran')))
+        : [...bySurah.entries()].map(([s, ms]) => h('div', null, h('h3', { style: { 'margin-top': '0.75rem' } }, surahOption(s)), ms.map((m) => row(app, m)))),
     ),
   );
 }

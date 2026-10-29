@@ -4,19 +4,12 @@ import type { RevisionScope } from '../../core/quran/scope.ts';
 import { SURAHS } from '../../core/quran/surahs.ts';
 import type { DivisionKind } from '../../core/quran/types.ts';
 import { h } from '../dom.ts';
+import { t } from '../i18n/index.ts';
+import { kindName, surahName } from '../i18n/labels.ts';
 
 type PickerKind = DivisionKind | 'surahs' | 'range' | 'all';
 
-const LABELS: Record<PickerKind, string> = {
-  hizb: 'Hizb',
-  quarter: 'Quarter (rub‘)',
-  eighth: 'Eighth (thumn)',
-  juz: 'Juz',
-  page: 'Page',
-  surahs: 'Surahs',
-  range: 'Custom ayah range',
-  all: 'Entire Quran',
-};
+const label = (k: PickerKind): string => t(`kindLong.${k}`);
 
 export interface ScopePicker {
   readonly el: HTMLElement;
@@ -33,20 +26,20 @@ export function scopePicker(index: DivisionIndex, initial: RevisionScope | null,
   const kindSel = h(
     'select',
     { id: `${opts.idPrefix}-kind`, onchange: () => { kind = kindSel.value as PickerKind; sync(); } },
-    kinds.map((k) => h('option', { value: k, selected: k === kind, disabled: !available(k) }, available(k) ? LABELS[k] : `${LABELS[k]} (data not loaded)`)),
+    kinds.map((k) => h('option', { value: k, selected: k === kind, disabled: !available(k) }, available(k) ? label(k) : t('common.dataNotLoaded', { label: label(k) }))),
   );
   const num = h('input', { id: `${opts.idPrefix}-num`, type: 'number', min: '1', inputmode: 'numeric', value: initial?.type === 'division' ? String(initial.number) : '1' });
   const surahSel = h(
     'select',
     { id: `${opts.idPrefix}-surahs`, multiple: true, size: 5 },
-    SURAHS.map((s) => h('option', { value: String(s.number), selected: initial?.type === 'surahs' && initial.surahs.includes(s.number) }, `${s.number}. ${s.nameTransliterated} (${s.nameArabic})`)),
+    SURAHS.map((s) => h('option', { value: String(s.number), selected: initial?.type === 'surahs' && initial.surahs.includes(s.number) }, `${s.number}. ${surahName(s.number)}`)),
   );
-  const from = h('input', { id: `${opts.idPrefix}-from`, placeholder: 'e.g. 2:253', value: initial?.type === 'range' ? `${initial.start.surah}:${initial.start.ayah}` : '' });
-  const to = h('input', { id: `${opts.idPrefix}-to`, placeholder: 'e.g. 3:14', value: initial?.type === 'range' ? `${initial.end.surah}:${initial.end.ayah}` : '' });
+  const from = h('input', { id: `${opts.idPrefix}-from`, class: 'ltr', dir: 'ltr', inputmode: 'numeric', placeholder: t('common.refPlaceholder', { ref: '2:253' }), value: initial?.type === 'range' ? `${initial.start.surah}:${initial.start.ayah}` : '' });
+  const to = h('input', { id: `${opts.idPrefix}-to`, class: 'ltr', dir: 'ltr', inputmode: 'numeric', placeholder: t('common.refPlaceholder', { ref: '3:14' }), value: initial?.type === 'range' ? `${initial.end.surah}:${initial.end.ayah}` : '' });
 
-  const numField = h('label', { class: 'field' }, h('span', null, 'Number'), num);
-  const surahField = h('label', { class: 'field' }, h('span', null, 'Surahs (Ctrl/⌘ to select several)'), surahSel);
-  const rangeFields = h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', null, 'From'), from), h('label', { class: 'field' }, h('span', null, 'To'), to));
+  const numField = h('label', { class: 'field' }, h('span', null, t('common.number')), num);
+  const surahField = h('label', { class: 'field' }, h('span', null, t('picker.surahsHelp')), surahSel);
+  const rangeFields = h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', null, t('common.from')), from), h('label', { class: 'field' }, h('span', null, t('common.to')), to));
 
   function sync() {
     const isDiv = kind !== 'surahs' && kind !== 'range' && kind !== 'all';
@@ -58,22 +51,22 @@ export function scopePicker(index: DivisionIndex, initial: RevisionScope | null,
   sync();
 
   return {
-    el: h('div', { class: 'row', style: { 'align-items': 'flex-end' } }, h('label', { class: 'field' }, h('span', null, 'Portion type'), kindSel), numField, surahField, rangeFields),
+    el: h('div', { class: 'row', style: { 'align-items': 'flex-end' } }, h('label', { class: 'field' }, h('span', null, t('picker.kind')), kindSel), numField, surahField, rangeFields),
     read() {
       if (kind === 'all') return { scope: { type: 'all' } };
       if (kind === 'surahs') {
         const surahs = [...surahSel.selectedOptions].map((o) => Number(o.value));
-        return surahs.length ? { scope: { type: 'surahs', surahs } } : { error: 'Select at least one surah.' };
+        return surahs.length ? { scope: { type: 'surahs', surahs } } : { error: t('picker.selectSurah') };
       }
       if (kind === 'range') {
         const a = parseRef(from.value);
         const b = parseRef(to.value);
-        if (!a || !b) return { error: 'Enter both ends as surah:ayah, for example 2:253 and 3:14.' };
+        if (!a || !b) return { error: t('picker.rangeError') };
         return { scope: { type: 'range', start: a, end: b } };
       }
       const n = Number(num.value);
       const max = index.count(kind);
-      if (!Number.isInteger(n) || n < 1 || n > max) return { error: `${LABELS[kind]} number must be between 1 and ${max}.` };
+      if (!Number.isInteger(n) || n < 1 || n > max) return { error: t('error.divisionOutOfRange', { kind: kindName(kind), max }) };
       return { scope: { type: 'division', kind, number: n } };
     },
   };

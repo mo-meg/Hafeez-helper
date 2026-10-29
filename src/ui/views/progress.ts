@@ -1,29 +1,27 @@
 import type { GroupPerformance } from '../../core/dashboard/aggregate.ts';
-import { OUTCOME_LABELS, STATUS_LABELS } from '../../core/model.ts';
-import { formatRef } from '../../core/quran/refs.ts';
-import { describeScope } from '../../core/quran/scope.ts';
-import { surahInfo } from '../../core/quran/surahs.ts';
 import type { DivisionKind } from '../../core/quran/types.ts';
 import type { App } from '../app.ts';
 import { bar, trendChart } from '../components/charts.ts';
 import { formatDateTime, h } from '../dom.ts';
 import { dashboardData, scoreExplanation } from './dashboard.ts';
+import { fmtNum, t } from '../i18n/index.ts';
+import { outcomeLabel, refLabel, scopeLabel, statusLabel, surahOption } from '../i18n/labels.ts';
 
 let groupBy: 'surah' | DivisionKind = 'hizb';
 
 function perfTable(rows: readonly GroupPerformance[], label: (k: number) => string, link: (k: number) => string): HTMLElement {
-  if (!rows.length) return h('p', { class: 'muted' }, 'No mistakes recorded in any portion yet.');
+  if (!rows.length) return h('p', { class: 'muted' }, t('prog.noPortion'));
   return h(
     'div',
     { class: 'table-wrap' },
     h('table', null,
-      h('thead', null, h('tr', null, h('th', null, 'Portion'), h('th', null, 'Mistakes'), h('th', null, 'Unresolved'), h('th', null, 'Resolved'), h('th', null, 'Estimated quality'), h('th', { class: 'sr-only' }, 'Bar'))),
+      h('thead', null, h('tr', null, h('th', null, t('common.portion')), h('th', null, t('prog.mistakes')), h('th', null, t('common.unresolved')), h('th', null, t('common.resolved')), h('th', null, t('prog.quality')), h('th', { class: 'sr-only' }, t('prog.bar')))),
       h('tbody', null, rows.map((r) => h('tr', null,
         h('td', null, h('a', { href: link(r.key) }, label(r.key))),
-        h('td', null, String(r.mistakes)),
-        h('td', null, String(r.unresolved)),
-        h('td', null, String(r.resolved)),
-        h('td', null, r.score === null ? '—' : `${r.score}/100`),
+        h('td', null, fmtNum(r.mistakes)),
+        h('td', null, fmtNum(r.unresolved)),
+        h('td', null, fmtNum(r.resolved)),
+        h('td', null, r.score === null ? '—' : t('common.score100', { score: r.score })),
         h('td', { style: { width: '25%' } }, r.score === null ? null : bar(r.score, 100)),
       ))),
     ),
@@ -33,14 +31,12 @@ function perfTable(rows: readonly GroupPerformance[], label: (k: number) => stri
 export function progressView(app: App): Node {
   const d = dashboardData(app);
   const index = app.quran.index;
-  const kinds: Array<['surah' | DivisionKind, string]> = [['surah', 'Surah'], ['juz', 'Juz'], ['hizb', 'Hizb'], ['quarter', 'Quarter'], ['eighth', 'Eighth']];
+  const kinds: Array<['surah' | DivisionKind, string]> = [['surah', t('common.surah')], ['juz', t('kind.juz')], ['hizb', t('kind.hizb')], ['quarter', t('kind.quarter')], ['eighth', t('kind.eighth')]];
   if (groupBy !== 'surah' && !index.has(groupBy)) groupBy = 'surah';
   const rows = groupBy === 'surah' ? d.bySurah : (d.byDivision[groupBy] ?? []);
   const label = (k: number) => {
-    if (groupBy === 'surah') return `${k}. ${surahInfo(k).nameTransliterated}`;
-    if (groupBy === 'quarter') return `Quarter ${k} (Hizb ${Math.ceil(k / 4)}, ${((k - 1) % 4) + 1}/4)`;
-    if (groupBy === 'eighth') return `Eighth ${k} (Hizb ${Math.ceil(k / 8)}, ${((k - 1) % 8) + 1}/8)`;
-    return `${groupBy === 'juz' ? 'Juz' : 'Hizb'} ${k}`;
+    if (groupBy === 'surah') return surahOption(k);
+    return scopeLabel({ type: 'division', kind: groupBy, number: k }, index);
   };
   const link = (k: number) => (groupBy === 'surah' ? `#/quran?surah=${k}` : `#/quran?${groupBy}=${k}`);
   const reviews = [...app.data.reviews].sort((a, b) => b.at.localeCompare(a.at));
@@ -56,37 +52,37 @@ export function progressView(app: App): Node {
   return h(
     'div',
     null,
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Progress'), h('p', { class: 'muted' }, 'How your recall is developing, based on the answers you recorded.'))),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, t('prog.title')), h('p', { class: 'muted' }, t('prog.intro')))),
     h(
       'section',
       { class: 'panel' },
-      h('h2', null, 'Last 30 days'),
-      d.trend.some((t) => t.reviews > 0 || t.score !== null)
-        ? [trendChart(d.trend), h('p', { class: 'muted' }, 'Bars: share of correct recalls each day. Line: estimated quality at the end of each day, computed with the same rules for every day.')]
-        : h('p', { class: 'muted' }, 'Record how you recalled your marked ayat during revision sessions and your trend will appear here.'),
+      h('h2', null, t('prog.last30')),
+      d.trend.some((p) => p.reviews > 0 || p.score !== null)
+        ? [trendChart(d.trend), h('p', { class: 'muted' }, t('prog.chartHelp'))]
+        : h('p', { class: 'muted' }, t('prog.noTrend')),
       scoreExplanation(),
     ),
     h(
       'section',
       { class: 'panel' },
-      h('div', { class: 'row spread' }, h('h2', null, 'By portion'), h('label', { class: 'field' }, h('span', null, 'Group by'), h('select', { 'data-key': 'groupby', onchange: (e: Event) => { groupBy = (e.target as HTMLSelectElement).value as typeof groupBy; app.render(true); } }, kinds.map(([k, l]) => h('option', { value: k, selected: k === groupBy, disabled: k !== 'surah' && !index.has(k) }, index.has(k as DivisionKind) || k === 'surah' ? l : `${l} (data not loaded)`))))),
+      h('div', { class: 'row spread' }, h('h2', null, t('prog.byPortion')), h('label', { class: 'field' }, h('span', null, t('prog.groupBy')), h('select', { 'data-key': 'groupby', onchange: (e: Event) => { groupBy = (e.target as HTMLSelectElement).value as typeof groupBy; app.render(true); } }, kinds.map(([k, l]) => h('option', { value: k, selected: k === groupBy, disabled: k !== 'surah' && !index.has(k) }, index.has(k as DivisionKind) || k === 'surah' ? l : t('common.dataNotLoaded', { label: l })))))),
       perfTable(rows, label, link),
     ),
     h(
       'section',
       { class: 'panel' },
-      h('h2', null, 'Recall history'),
+      h('h2', null, t('prog.history')),
       recalls.length
-        ? h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'When'), h('th', null, 'Ayah'), h('th', null, 'Answer'), h('th', null, 'Status after'))), h('tbody', null, recalls.slice(0, 60).map((r) => h('tr', null, h('td', null, formatDateTime(r.at)), h('td', null, h('a', { href: `#/quran?surah=${r.surah}&focus=${r.globalIndex}` }, formatRef(r))), h('td', null, OUTCOME_LABELS[r.outcome], r.demo ? h('span', { class: 'chip demo', style: { 'margin-inline-start': '0.4rem' } }, 'Demo') : null), h('td', null, STATUS_LABELS[r.nextStatus]))))))
-        : h('p', { class: 'muted' }, 'No recall answers recorded yet.'),
+        ? h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, h('th', null, t('prog.when')), h('th', null, t('common.ayah')), h('th', null, t('prog.answer')), h('th', null, t('prog.statusAfter')))), h('tbody', null, recalls.slice(0, 60).map((r) => h('tr', null, h('td', null, formatDateTime(r.at)), h('td', null, h('a', { href: `#/quran?surah=${r.surah}&focus=${r.globalIndex}` }, refLabel(r))), h('td', null, outcomeLabel(r.outcome), r.demo ? h('span', { class: 'chip demo', style: { 'margin-inline-start': '0.4rem' } }, t('common.demo')) : null), h('td', null, statusLabel(r.nextStatus)))))))
+        : h('p', { class: 'muted' }, t('prog.noHistory')),
     ),
     h(
       'section',
       { class: 'panel' },
-      h('h2', null, 'Sessions'),
+      h('h2', null, t('prog.sessions')),
       sessions.length
-        ? h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'Started'), h('th', null, 'Portion'), h('th', null, 'Type'), h('th', null, 'Plays'), h('th', null, 'Status'))), h('tbody', null, sessions.slice(0, 30).map((s) => h('tr', null, h('td', null, formatDateTime(s.startedAt)), h('td', null, describeScope(s.scope, index)), h('td', null, { mistakes: 'Mistakes', full: 'Full', combined: 'Combined', test: 'Test' }[s.mode]), h('td', null, `${s.completedSteps} of ${s.plannedSteps}`), h('td', null, { active: 'Interrupted or running', completed: 'Completed', abandoned: 'Ended early' }[s.status]))))))
-        : h('p', { class: 'muted' }, 'No sessions yet.'),
+        ? h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, h('th', null, t('prog.startedCol')), h('th', null, t('common.portion')), h('th', null, t('common.type')), h('th', null, t('prog.plays')), h('th', null, t('common.status')))), h('tbody', null, sessions.slice(0, 30).map((s) => h('tr', null, h('td', null, formatDateTime(s.startedAt)), h('td', null, scopeLabel(s.scope, index)), h('td', null, t(`modeShort.${s.mode}`)), h('td', null, t('common.ofTotal', { n: s.completedSteps, total: s.plannedSteps })), h('td', null, t(`sessionStatus.${s.status}`)))))))
+        : h('p', { class: 'muted' }, t('prog.noSessions')),
     ),
   );
 }

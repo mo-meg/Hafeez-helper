@@ -105,6 +105,9 @@ const SessionSchema = z.object({
   demo: z.boolean().optional(),
 });
 
+/** Per-table record validators, shared with cloud sync (remote rows are validated before use). */
+export const RECORD_SCHEMAS = { mistakes: MistakeSchema, reviews: ReviewSchema, mistakeEvents: EventSchema, plans: PlanSchema, sessions: SessionSchema } as const;
+
 export const BackupSchema = z.object({
   app: z.literal('hafeez-helfer'),
   schemaVersion: z.literal(SCHEMA_VERSION),

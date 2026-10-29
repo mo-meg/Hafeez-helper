@@ -1,7 +1,6 @@
 import { isUnresolved, type Mistake } from '../../core/model.ts';
 import { DivisionUnavailableError } from '../../core/quran/divisions.ts';
-import { formatRef, fromIndex, surahEndIndex, surahStartIndex, toIndex } from '../../core/quran/refs.ts';
-import { kindLabel } from '../../core/quran/scope.ts';
+import { fromIndex, surahEndIndex, surahStartIndex, toIndex } from '../../core/quran/refs.ts';
 import { SURAHS, surahInfo } from '../../core/quran/surahs.ts';
 import type { AyahRef, DivisionKind, DivisionRange } from '../../core/quran/types.ts';
 import { DEFAULT_PREFERENCES } from '../../core/settings/preferences.ts';
@@ -9,6 +8,8 @@ import type { App } from '../app.ts';
 import { openDialog } from '../components/dialog.ts';
 import { openMarkDialog, statusChip } from '../components/markDialog.ts';
 import { arabicDigits, h, type Child } from '../dom.ts';
+import { dir, fmtNum, t, tn } from '../i18n/index.ts';
+import { divisionLabel, errorText, kindName, refLabel, surahName, surahOption } from '../i18n/labels.ts';
 
 const KINDS: DivisionKind[] = ['juz', 'hizb', 'quarter', 'eighth', 'page'];
 
@@ -29,7 +30,7 @@ function resolveRange(app: App): { range: ViewRange; problem: string | null } {
       const d = index.range(kind, Number(v));
       return { range: { start: d.startIndex, end: d.endIndex, division: d, surah: null }, problem: null };
     } catch (e) {
-      const msg = e instanceof DivisionUnavailableError ? e.message : `${kindLabel(kind)} ${v} does not exist.`;
+      const msg = e instanceof DivisionUnavailableError ? errorText(e) : t('error.divisionMissing', { label: divisionLabel(kind, Number(v)) });
       const s = app.readingPosition?.surah ?? 1;
       return { range: { start: surahStartIndex(s), end: surahEndIndex(s), division: null, surah: s }, problem: msg };
     }
@@ -55,15 +56,15 @@ function navigator(app: App, range: ViewRange): HTMLElement {
   const surahSel = h(
     'select',
     { id: 'nav-surah', onchange: () => surahSel.value && go(`surah=${surahSel.value}`) },
-    range.surah === null ? h('option', { value: '', selected: true }, 'Choose…') : null,
-    SURAHS.map((s) => h('option', { value: String(s.number), selected: range.surah === s.number }, `${s.number}. ${s.nameTransliterated}`)),
+    range.surah === null ? h('option', { value: '', selected: true }, t('common.choose')) : null,
+    SURAHS.map((s) => h('option', { value: String(s.number), selected: range.surah === s.number }, surahOption(s.number))),
   );
-  const ayahInput = h('input', { id: 'nav-ayah', type: 'number', min: '1', placeholder: 'Ayah', style: { width: '5.5rem' } });
+  const ayahInput = h('input', { id: 'nav-ayah', type: 'number', min: '1', placeholder: t('quran.ayahPlaceholder'), style: { width: '5.5rem' } });
   const goAyah = () => {
     const s = Number(surahSel.value);
     const a = Number(ayahInput.value);
     if (!Number.isInteger(a) || a < 1 || a > surahInfo(s).ayahCount) {
-      app.toast(`${surahInfo(s).nameTransliterated} has ${surahInfo(s).ayahCount} ayat.`, 'error');
+      app.toast(t('quran.ayahCount', { name: surahName(s), count: surahInfo(s).ayahCount }), 'error');
       return;
     }
     go(`surah=${s}&focus=${toIndex({ surah: s, ayah: a })}`);
@@ -72,23 +73,23 @@ function navigator(app: App, range: ViewRange): HTMLElement {
     const n = index.count(kind);
     const current = range.division?.kind === kind ? range.division.number : null;
     const label = (i: number) => {
-      if (kind === 'quarter') return `${i}  (Hizb ${Math.ceil(i / 4)}, ${((i - 1) % 4) + 1}/4)`;
-      if (kind === 'eighth') return `${i}  (Hizb ${Math.ceil(i / 8)}, ${((i - 1) % 8) + 1}/8)`;
-      return String(i);
+      if (kind === 'quarter') return t('division.optionQuarter', { n: i, hizb: Math.ceil(i / 4), within: ((i - 1) % 4) + 1 });
+      if (kind === 'eighth') return t('division.optionEighth', { n: i, hizb: Math.ceil(i / 8), within: ((i - 1) % 8) + 1 });
+      return fmtNum(i);
     };
     const sel = h(
       'select',
       { id: `nav-${kind}`, disabled: n === 0, onchange: () => go(`${kind}=${sel.value}`) },
-      h('option', { value: '' }, n === 0 ? 'Not loaded' : 'Choose…'),
+      h('option', { value: '' }, n === 0 ? t('common.notLoaded') : t('common.choose')),
       Array.from({ length: n }, (_, i) => h('option', { value: String(i + 1), selected: current === i + 1 }, label(i + 1))),
     );
-    return h('label', { class: 'field' }, h('span', null, kindLabel(kind)), sel);
+    return h('label', { class: 'field' }, h('span', null, kindName(kind)), sel);
   };
   return h(
     'div',
     { class: 'navigator panel' },
-    h('label', { class: 'field' }, h('span', null, 'Surah'), surahSel),
-    h('label', { class: 'field' }, h('span', null, 'Ayah'), h('div', { class: 'row' }, ayahInput, h('button', { type: 'button', onclick: goAyah }, 'Go'))),
+    h('label', { class: 'field' }, h('span', null, t('common.surah')), surahSel),
+    h('label', { class: 'field' }, h('span', null, t('common.ayah')), h('div', { class: 'row' }, ayahInput, h('button', { type: 'button', onclick: goAyah }, t('common.go')))),
     KINDS.map(divisionSelect),
   );
 }
@@ -99,19 +100,19 @@ function stepLinks(app: App, range: ViewRange): HTMLElement {
     const max = app.quran.index.count(d.kind);
     return h(
       'div',
-      { class: 'row spread', style: { margin: '0 auto 0.75rem', 'max-width': '46rem' } },
-      h('button', { type: 'button', disabled: d.number <= 1, onclick: () => app.navigate(`#/quran?${d.kind}=${d.number - 1}`) }, `Previous ${kindLabel(d.kind).toLowerCase()}`),
-      h('strong', null, `${kindLabel(d.kind)} ${d.number}`),
-      h('button', { type: 'button', disabled: d.number >= max, onclick: () => app.navigate(`#/quran?${d.kind}=${d.number + 1}`) }, `Next ${kindLabel(d.kind).toLowerCase()}`),
+      { class: 'row spread step-links' },
+      h('button', { type: 'button', disabled: d.number <= 1, onclick: () => app.navigate(`#/quran?${d.kind}=${d.number - 1}`) }, t('quran.prevDivision', { kind: kindName(d.kind) })),
+      h('strong', null, divisionLabel(d.kind, d.number)),
+      h('button', { type: 'button', disabled: d.number >= max, onclick: () => app.navigate(`#/quran?${d.kind}=${d.number + 1}`) }, t('quran.nextDivision', { kind: kindName(d.kind) })),
     );
   }
   const s = range.surah ?? 1;
   return h(
     'div',
-    { class: 'row spread', style: { margin: '0 auto 0.75rem', 'max-width': '46rem' } },
-    h('button', { type: 'button', disabled: s <= 1, onclick: () => app.navigate(`#/quran?surah=${s - 1}`) }, 'Previous surah'),
-    h('strong', null, `${surahInfo(s).nameTransliterated} (${surahInfo(s).ayahCount} ayat)`),
-    h('button', { type: 'button', disabled: s >= 114, onclick: () => app.navigate(`#/quran?surah=${s + 1}`) }, 'Next surah'),
+    { class: 'row spread step-links' },
+    h('button', { type: 'button', disabled: s <= 1, onclick: () => app.navigate(`#/quran?surah=${s - 1}`) }, t('quran.prevSurah')),
+    h('strong', null, t('quran.surahHeading', { name: surahName(s), count: surahInfo(s).ayahCount })),
+    h('button', { type: 'button', disabled: s >= 114, onclick: () => app.navigate(`#/quran?surah=${s + 1}`) }, t('quran.nextSurah')),
   );
 }
 
@@ -127,24 +128,24 @@ function divisionMarker(app: App, idx: number): HTMLElement | null {
   const quarter = startsAt('quarter');
   const eighth = startsAt('eighth');
   const parts: string[] = [];
-  if (juz) parts.push(`Juz ${juz}`);
-  if (hizb) parts.push(`Hizb ${hizb}`);
-  else if (quarter) parts.push(`Hizb ${Math.ceil(quarter / 4)}, quarter ${((quarter - 1) % 4) + 1}`);
-  else if (eighth) parts.push(`Hizb ${Math.ceil(eighth / 8)}, eighth ${((eighth - 1) % 8) + 1}`);
-  return parts.length ? h('span', { class: 'division-marker', role: 'note' }, parts.join(', ')) : null;
+  if (juz) parts.push(t('division.markerJuz', { n: juz }));
+  if (hizb) parts.push(t('division.markerHizb', { n: hizb }));
+  else if (quarter) parts.push(t('division.markerQuarter', { hizb: Math.ceil(quarter / 4), q: ((quarter - 1) % 4) + 1 }));
+  else if (eighth) parts.push(t('division.markerEighth', { hizb: Math.ceil(eighth / 8), e: ((eighth - 1) % 8) + 1 }));
+  return parts.length ? h('span', { class: 'division-marker', role: 'note', dir: dir() }, parts.join(t('common.listSep'))) : null;
 }
 
 function ayahActions(app: App, ref: AyahRef, ms: readonly Mistake[]) {
   const idx = toIndex(ref);
   openDialog({
-    title: formatRef(ref),
+    title: refLabel(ref),
     body: [
       ms.length
-        ? h('ul', { class: 'sub-list' }, ms.map((m) => h('li', null, h('button', { type: 'button', onclick: () => void openMarkDialog(app, { ref, word: m.word }) }, h('span', null, m.word ? `Word ${m.word.position}` : 'Whole ayah'), statusChip(m)))))
-        : h('p', { class: 'muted' }, 'No mistakes recorded on this ayah.'),
+        ? h('ul', { class: 'sub-list' }, ms.map((m) => h('li', null, h('button', { type: 'button', onclick: () => void openMarkDialog(app, { ref, word: m.word }) }, h('span', null, m.word ? t('common.word', { n: m.word.position }) : t('common.wholeAyah')), statusChip(m)))))
+        : h('p', { class: 'muted' }, t('quran.noMistakesOnAyah')),
     ],
     actions: (close) => [
-      h('button', { type: 'button', onclick: () => { close(); void app.setReadingPosition(ref).then(() => app.toast(`Reading position set to ${formatRef(ref)}.`)); } }, 'Set reading position'),
+      h('button', { type: 'button', onclick: () => { close(); void app.setReadingPosition(ref).then(() => app.toast(t('quran.positionSet', { ref: refLabel(ref) }))); } }, t('quran.setPosition')),
       h('button', {
         type: 'button',
         onclick: () => {
@@ -154,15 +155,15 @@ function ayahActions(app: App, ref: AyahRef, ms: readonly Mistake[]) {
             mode: ms.some((m) => isUnresolved(m.status)) ? 'mistakes' : 'full',
             scope: { type: 'range', start: ref, end: ref },
             planId: null,
-            label: formatRef(ref),
+            label: `${ref.surah}:${ref.ayah}`,
             options: { contextBefore: p.contextBefore, contextAfter: p.contextAfter, contextAcrossSurahs: p.contextAcrossSurahs, wordPractice: p.wordPractice },
             repeat: p.repeat,
             portionAyahRepeat: p.repeat.ayahRepeat,
             reciterId: p.reciterId,
-          });
+          }, () => refLabel(ref));
         },
-      }, 'Listen and repeat'),
-      h('button', { type: 'button', class: 'primary', 'data-key': `markayah-${idx}`, onclick: () => { close(); void openMarkDialog(app, { ref, word: null }); } }, ms.some((m) => !m.word) ? 'Open ayah mistake' : 'Mark whole ayah'),
+      }, t('quran.listen')),
+      h('button', { type: 'button', class: 'primary', 'data-key': `markayah-${idx}`, onclick: () => { close(); void openMarkDialog(app, { ref, word: null }); } }, ms.some((m) => !m.word) ? t('quran.openAyahMistake') : t('quran.markAyah')),
     ],
   });
 }
@@ -176,11 +177,11 @@ function textBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMap
     const ayah = text?.ayahAt(idx);
     if (idx === range.start && ref.ayah !== 1) {
       const info = surahInfo(ref.surah);
-      container.append(h('div', { class: 'surah-head', dir: 'ltr' }, h('span', { class: 'tr' }, `${info.nameTransliterated} (${info.nameArabic}), continuing from ${ref.surah}:${ref.ayah}`)));
+      container.append(h('div', { class: 'surah-head', dir: dir() }, h('span', { class: 'tr' }, t('quran.continuing', { name: surahName(info.number), ref: `${ref.surah}:${ref.ayah}` }))));
     }
     if (ref.ayah === 1) {
       const info = surahInfo(ref.surah);
-      container.append(h('div', { class: 'surah-head', dir: 'ltr' }, h('span', { class: 'ar', lang: 'ar', dir: 'rtl' }, `سورة ${info.nameArabic}`), h('span', { class: 'tr' }, `${info.number}. ${info.nameTransliterated}, ${info.ayahCount} ayat`)));
+      container.append(h('div', { class: 'surah-head', dir: dir() }, h('span', { class: 'ar', lang: 'ar', dir: 'rtl' }, `سورة ${info.nameArabic}`), h('span', { class: 'tr' }, t('quran.surahInfo', { n: info.number, name: surahName(info.number), count: info.ayahCount }))));
       if (ayah?.basmalaPrefix) container.append(h('div', { class: 'basmala' }, ayah.basmalaPrefix));
     }
     const marker = divisionMarker(app, idx);
@@ -214,7 +215,7 @@ function textBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMap
         type: 'button',
         class: `ayah-end${ms.length ? ' has-mistake' : ''}${allResolved ? ' all-resolved' : ''}`,
         dataset: { end: idx, key: `end-${idx}` },
-        'aria-label': `Ayah ${ref.surah}:${ref.ayah}${ms.length ? `, ${ms.length} recorded mistake${ms.length > 1 ? 's' : ''}` : ''}. Options`,
+        'aria-label': tn('quran.ayahAria', ms.length, { ref: refLabel(ref) }),
       }, arabicDigits(ref.ayah)),
       ' ',
     );
@@ -248,8 +249,8 @@ function refOnlyBody(app: App, range: ViewRange, maps: ReturnType<typeof mistake
       h(
         'div',
         { class: 'ayah-row', id: `a-${idx}`, dataset: { idx } },
-        h('span', null, formatRef(ref)),
-        h('span', { class: 'row' }, ms.map((m) => statusChip(m)), h('button', { type: 'button', 'data-key': `end-${idx}`, onclick: () => ayahActions(app, ref, ms) }, ms.length ? 'Options' : 'Mark or listen')),
+        h('span', null, refLabel(ref)),
+        h('span', { class: 'row' }, ms.map((m) => statusChip(m)), h('button', { type: 'button', 'data-key': `end-${idx}`, onclick: () => ayahActions(app, ref, ms) }, ms.length ? t('quran.options') : t('quran.markOrListen'))),
       ),
     );
   }
@@ -270,7 +271,7 @@ function divisionPanel(app: App, range: ViewRange): HTMLElement {
   const startRef = fromIndex(range.start);
   const endRef = fromIndex(range.end);
   const loc = index.locate(startRef);
-  const pos = app.readingPosition && toIndex(app.readingPosition) >= range.start && toIndex(app.readingPosition) <= range.end ? formatRef(app.readingPosition) : 'Not in this portion';
+  const pos = app.readingPosition && toIndex(app.readingPosition) >= range.start && toIndex(app.readingPosition) <= range.end ? refLabel(app.readingPosition) : t('quran.notInPortion');
 
   const subItem = (r: DivisionRange, cls: string, label: string) => {
     const w = startWords(app, r.startIndex);
@@ -281,8 +282,8 @@ function divisionPanel(app: App, range: ViewRange): HTMLElement {
       h(
         'button',
         { type: 'button', onclick: () => app.navigate(`#/quran?${r.kind}=${r.number}&focus=${r.startIndex}`) },
-        h('span', null, h('strong', null, label), h('br'), h('small', null, `from ${formatRef(r.start)}`), count ? h('small', { style: { color: 'var(--mistake)' } }, `, ${count} open`) : null),
-        w ? h('span', { class: 'start-words', lang: 'ar' }, w) : null,
+        h('span', null, h('strong', null, label), h('br'), h('small', null, t('quran.fromRef', { ref: refLabel(r.start) })), count ? h('small', { style: { color: 'var(--mistake)' } }, t('quran.openCount', { count })) : null),
+        w ? h('span', { class: 'start-words', lang: 'ar', dir: 'rtl' }, w) : null,
       ),
     );
   };
@@ -293,38 +294,38 @@ function divisionPanel(app: App, range: ViewRange): HTMLElement {
     const eighthsOf = (q: DivisionRange) => index.children(q, 'eighth');
     const items: HTMLElement[] = [];
     if (d.kind === 'quarter') {
-      for (const e of eighthsOf(d)) items.push(subItem(e, 'eighth', `Eighth ${((e.number - 1) % 8) + 1} of Hizb ${Math.ceil(e.number / 8)}`));
+      for (const e of eighthsOf(d)) items.push(subItem(e, 'eighth', t('division.eighthOfHizb', { e: ((e.number - 1) % 8) + 1, hizb: Math.ceil(e.number / 8) })));
     } else {
       for (const q of quarters) {
-        items.push(subItem(q, 'quarter', `Quarter ${((q.number - 1) % 4) + 1} of Hizb ${Math.ceil(q.number / 4)}`));
-        for (const e of eighthsOf(q)) items.push(subItem(e, 'eighth', `Eighth ${((e.number - 1) % 8) + 1}`));
+        items.push(subItem(q, 'quarter', t('division.quarterOfHizb', { q: ((q.number - 1) % 4) + 1, hizb: Math.ceil(q.number / 4) })));
+        for (const e of eighthsOf(q)) items.push(subItem(e, 'eighth', t('division.eighthN', { e: ((e.number - 1) % 8) + 1 })));
       }
     }
     subs = h(
       'div',
       null,
-      h('h3', { style: { 'margin-top': '1rem' } }, 'Subdivisions'),
-      items.length ? h('ul', { class: 'sub-list' }, items) : h('p', { class: 'muted' }, 'Quarter data is not loaded.'),
-      !index.has('eighth') ? h('p', { class: 'muted', style: { 'margin-top': '0.5rem' } }, 'Eighth (thumn) boundaries are not part of the Madani metadata. You can import a verified eighths list in Settings.') : null,
+      h('h3', { style: { 'margin-top': '1rem' } }, t('quran.subdivisions')),
+      items.length ? h('ul', { class: 'sub-list' }, items) : h('p', { class: 'muted' }, t('quran.noQuarters')),
+      !index.has('eighth') ? h('p', { class: 'muted', style: { 'margin-top': '0.5rem' } }, t('quran.noEighths')) : null,
     );
   }
 
   return h(
     'aside',
-    { class: 'panel division-panel', 'aria-label': 'Portion details' },
-    h('h2', null, d ? `${kindLabel(d.kind)} ${d.number}` : `Surah ${surahInfo(range.surah ?? 1).nameTransliterated}`),
+    { class: 'panel division-panel', 'aria-label': t('quran.portionDetails') },
+    h('h2', null, d ? divisionLabel(d.kind, d.number) : t('scope.surah', { name: surahName(range.surah ?? 1) })),
     h(
       'dl',
       { class: 'kv' },
-      h('dt', null, 'Starts'), h('dd', null, formatRef(startRef)),
-      h('dt', null, 'Ends'), h('dd', null, formatRef(endRef)),
-      h('dt', null, 'Ayat'), h('dd', null, String(range.end - range.start + 1)),
-      h('dt', null, 'Juz'), h('dd', null, `${loc.juz ?? '—'}${index.locate(endRef).juz !== loc.juz ? `–${index.locate(endRef).juz}` : ''}`),
-      index.has('hizb') ? [h('dt', null, 'Hizb'), h('dd', null, `${loc.hizb}${index.locate(endRef).hizb !== loc.hizb ? `–${index.locate(endRef).hizb}` : ''}`)] : null,
-      h('dt', null, 'Reading position'), h('dd', { id: 'reading-pos' }, pos),
-      h('dt', null, 'Marked mistakes'), h('dd', null, String(inRange.length)),
-      h('dt', null, 'Unresolved'), h('dd', null, String(unresolved)),
-      h('dt', null, 'Resolved'), h('dd', null, String(inRange.length - unresolved)),
+      h('dt', null, t('common.starts')), h('dd', null, refLabel(startRef)),
+      h('dt', null, t('common.ends')), h('dd', null, refLabel(endRef)),
+      h('dt', null, t('common.ayat')), h('dd', null, fmtNum(range.end - range.start + 1)),
+      h('dt', null, t('common.juz')), h('dd', null, `${loc.juz ?? '—'}${index.locate(endRef).juz !== loc.juz ? `–${index.locate(endRef).juz}` : ''}`),
+      index.has('hizb') ? [h('dt', null, t('common.hizb')), h('dd', null, `${loc.hizb}${index.locate(endRef).hizb !== loc.hizb ? `–${index.locate(endRef).hizb}` : ''}`)] : null,
+      h('dt', null, t('quran.readingPosition')), h('dd', { id: 'reading-pos' }, pos),
+      h('dt', null, t('common.markedMistakes')), h('dd', null, fmtNum(inRange.length)),
+      h('dt', null, t('common.unresolved')), h('dd', null, fmtNum(unresolved)),
+      h('dt', null, t('common.resolved')), h('dd', null, fmtNum(inRange.length - unresolved)),
     ),
     h(
       'div',
@@ -334,12 +335,23 @@ function divisionPanel(app: App, range: ViewRange): HTMLElement {
         onclick: () => {
           const p = app.prefs;
           const scope = d ? { type: 'division' as const, kind: d.kind, number: d.number } : { type: 'surahs' as const, surahs: [range.surah ?? 1] };
-          app.prepare({ mode: 'mistakes', scope, planId: null, label: d ? `${kindLabel(d.kind)} ${d.number}` : `Surah ${surahInfo(range.surah ?? 1).nameTransliterated}`, options: { contextBefore: p.contextBefore, contextAfter: p.contextAfter, contextAcrossSurahs: p.contextAcrossSurahs, wordPractice: p.wordPractice, categories: p.categories }, repeat: p.repeat, portionAyahRepeat: p.portionAyahRepeat, reciterId: p.reciterId });
+          app.prepare({ mode: 'mistakes', scope, planId: null, label: d ? `${d.kind} ${d.number}` : `surah ${range.surah ?? 1}`, options: { contextBefore: p.contextBefore, contextAfter: p.contextAfter, contextAcrossSurahs: p.contextAcrossSurahs, wordPractice: p.wordPractice, categories: p.categories }, repeat: p.repeat, portionAyahRepeat: p.portionAyahRepeat, reciterId: p.reciterId });
         },
-      }, 'Revise mistakes here'),
-      d ? h('button', { type: 'button', onclick: () => void app.act(async () => { await app.s.plans.setPlan(app.today(), { type: 'division', kind: d.kind, number: d.number }); await app.refresh(); }, `${kindLabel(d.kind)} ${d.number} is today's revision.`) }, "Make today's revision") : null,
+      }, t('quran.reviseHere')),
+      d ? h('button', { type: 'button', onclick: () => void app.act(async () => { await app.s.plans.setPlan(app.today(), { type: 'division', kind: d.kind, number: d.number }); await app.refresh(); }, t('quran.madeToday', { label: divisionLabel(d.kind, d.number) })) }, t('quran.makeToday')) : null,
     ),
     subs,
+  );
+}
+
+/** Explains the colours used for marks inside the Quran text (colour is never the only cue). */
+function legend(): HTMLElement {
+  return h(
+    'div',
+    { class: 'legend', role: 'note', 'aria-label': t('quran.legend') },
+    h('span', null, h('span', { class: 'swatch marked', 'aria-hidden': 'true' }), t('quran.legendMarked')),
+    h('span', null, h('span', { class: 'swatch resolved', 'aria-hidden': 'true' }), t('quran.legendResolved')),
+    h('span', null, h('span', { class: 'swatch ayah', 'aria-hidden': 'true' }), t('quran.legendAyah')),
   );
 }
 
@@ -348,7 +360,7 @@ export function quranView(app: App): Node {
   const maps = mistakeMaps(app.data.mistakes);
   const hasText = !!app.quran.text;
   const body = hasText ? textBody(app, range, maps) : refOnlyBody(app, range, maps);
-  const mushaf = h('article', { class: 'mushaf', 'aria-label': 'Quran text' }, body);
+  const mushaf = h('article', { class: 'mushaf', 'aria-label': t('quran.textLabel') }, body);
 
   // Scroll to a requested ayah and track the reading position while scrolling.
   const focus = Number(app.route.params.get('focus') ?? NaN);
@@ -365,7 +377,7 @@ export function quranView(app: App): Node {
       if (visible === undefined) return;
       const ref = fromIndex(visible);
       const label = document.getElementById('reading-pos');
-      if (label) label.textContent = formatRef(ref);
+      if (label) label.textContent = refLabel(ref);
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => void app.setReadingPosition(ref), 800);
     }, { rootMargin: '-35% 0px -55% 0px' });
@@ -375,13 +387,13 @@ export function quranView(app: App): Node {
   return h(
     'div',
     null,
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Quran'), h('p', { class: 'muted' }, 'Tap a word to mark a mistake. Tap an ayah number to mark the whole ayah or listen to it.'))),
-    h('span', { id: 'marked-desc', class: 'sr-only' }, 'Marked as a mistake'),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, t('quran.title')), h('p', { class: 'muted' }, t('quran.intro')))),
+    h('span', { id: 'marked-desc', class: 'sr-only' }, t('quran.markedDesc')),
     problem ? h('div', { class: 'notice warn', role: 'alert' }, problem) : null,
     !hasText
-      ? h('div', { class: 'notice info' }, h('p', null, 'The Quran text is not downloaded yet, so ayat are listed by reference. You can still mark whole ayat and listen to them.'), h('a', { class: 'btn', href: '#/settings?section=data' }, 'Download Quran data'))
+      ? h('div', { class: 'notice info' }, h('p', null, t('quran.noText')), h('a', { class: 'btn', href: '#/settings?section=data' }, t('common.downloadQuranData')))
       : null,
     navigator(app, range),
-    h('div', { class: 'reader-layout' }, h('div', null, stepLinks(app, range), mushaf), divisionPanel(app, range)),
+    h('div', { class: 'reader-layout' }, h('div', null, stepLinks(app, range), legend(), mushaf), divisionPanel(app, range)),
   );
 }

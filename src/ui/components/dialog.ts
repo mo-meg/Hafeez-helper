@@ -1,4 +1,5 @@
 import { h, type Child } from '../dom.ts';
+import { t } from '../i18n/index.ts';
 
 export interface DialogHandle {
   readonly el: HTMLDialogElement;
@@ -33,7 +34,7 @@ export function confirmDialog(title: string, message: string, confirmLabel: stri
       title,
       body: h('p', null, message),
       actions: (close) => [
-        h('button', { type: 'button', onclick: close }, 'Cancel'),
+        h('button', { type: 'button', onclick: close }, t('common.cancel')),
         h('button', { type: 'button', class: danger ? 'danger' : 'primary', onclick: () => { result = true; close(); } }, confirmLabel),
       ],
       onClose: () => resolve(result),
