@@ -3,6 +3,7 @@ import { buildIcs, notificationsSupported, requestNotificationPermission } from 
 import { resolveAudioUrl, TemplateError, validateTemplate, type ReciterSource } from '../../core/audio/reciters.ts';
 import { removeDemoData, seedDemoData } from '../../core/demo.ts';
 import { ANCHOR_SOURCES } from '../../core/quran/anchors.ts';
+import { QURAN_TEXT_EDITIONS } from '../../core/data/alquranCloud.ts';
 import { REPEAT_LIMITS } from '../../core/playlist/sequence.ts';
 import type { Preferences } from '../../core/settings/preferences.ts';
 import { exportBackup, parseBackup, restoreBackup, wipePersonalData } from '../../core/storage/backup.ts';
@@ -52,6 +53,10 @@ function quranDataSection(app: App): HTMLElement {
   const t = q.text?.dataset;
   const d = q.divisions;
   const fileInput = h('input', { type: 'file', accept: 'application/json,.json', 'aria-label': tr('set.eighthsFile') });
+  const textEdition = h('select', { 'aria-label': tr('set.textStyle'), 'data-key': 'quran-text-style' },
+    h('option', { value: QURAN_TEXT_EDITIONS.uthmani, selected: (t?.edition ?? QURAN_TEXT_EDITIONS.uthmani) === QURAN_TEXT_EDITIONS.uthmani }, tr('set.textUthmani')),
+    h('option', { value: QURAN_TEXT_EDITIONS.simple, selected: t?.edition === QURAN_TEXT_EDITIONS.simple }, tr('set.textSimple')),
+  );
   return section(
     'data',
     tr('set.data'),
@@ -71,19 +76,23 @@ function quranDataSection(app: App): HTMLElement {
     h(
       'div',
       { class: 'row' },
+      h('label', { class: 'choice' }, h('span', null, tr('set.textStyle')), textEdition),
       h('button', {
         type: 'button', class: t ? '' : 'primary', 'data-key': 'download-data',
         onclick: async (e: Event) => {
           const btn = e.currentTarget as HTMLButtonElement;
           btn.disabled = true;
+          textEdition.disabled = true;
+          const edition = textEdition.value as (typeof QURAN_TEXT_EDITIONS)[keyof typeof QURAN_TEXT_EDITIONS];
           const ok = await app.act(async () => {
-            app.quran = await app.s.quran.downloadFromAlQuranCloud((m) => { status.textContent = progressText(m); });
+            app.quran = await app.s.quran.setEdition(edition, (m) => { status.textContent = progressText(m); });
           }, tr('set.downloaded'));
           btn.disabled = false;
+          textEdition.disabled = false;
           if (!ok) status.textContent = tr('set.downloadFailed');
           else app.render(true);
         },
-      }, t ? tr('set.downloadAgain') : tr('set.download')),
+      }, t ? tr('set.changeTextStyle') : tr('set.download')),
       t || d.quarterStarts ? h('button', { type: 'button', class: 'quiet', onclick: async () => { if (await confirmDialog(tr('set.removeDataTitle'), tr('set.removeDataBody'), tr('common.remove'))) { app.quran = await app.s.quran.clearCache(); app.render(true); } } }, tr('set.removeData')) : null,
     ),
     status,

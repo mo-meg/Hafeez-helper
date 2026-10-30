@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { DivisionDataset } from '../quran/divisions.ts';
 import { SURAHS, TOTAL_AYAT } from '../quran/surahs.ts';
-import type { QuranTextDataset } from '../quran/text.ts';
+import { applyTanzilTextEncodingUpdates, type QuranTextDataset } from '../quran/text.ts';
 
 /**
  * AlQuran.cloud (https://alquran.cloud/api) — free, no authentication, CORS-enabled.
@@ -18,6 +18,13 @@ export const ALQURAN_CLOUD = {
   defaultEdition: 'quran-uthmani',
   license: 'Text: Tanzil Quran Text (CC BY 3.0, verbatim copies only, attribution to tanzil.net required).',
 } as const;
+
+/** Tanzil text styles in the Hafs narration, both with the standard 6236 ayat. */
+export const QURAN_TEXT_EDITIONS = {
+  uthmani: 'quran-uthmani',
+  simple: 'quran-simple',
+} as const;
+export type QuranTextEdition = (typeof QURAN_TEXT_EDITIONS)[keyof typeof QURAN_TEXT_EDITIONS];
 
 const AyahSchema = z.object({
   number: z.number().int(),
@@ -104,7 +111,7 @@ export function parseAlQuranCloudFullQuran(json: unknown, retrievedAt: string): 
     s.ayahs.forEach((a, j) => {
       if (a.numberInSurah !== j + 1) throw new DataFormatError(`Ayah numbering mismatch in surah ${s.number} at ${j + 1}`);
       if (a.number !== ayat.length + 1) throw new DataFormatError(`Global ayah number mismatch at ${s.number}:${j + 1}`);
-      ayat.push(a.text);
+      ayat.push(applyTanzilTextEncodingUpdates(a.text));
       juzSeq.push({ value: a.juz, surah: s.number, ayah: a.numberInSurah });
       quarterSeq.push({ value: a.hizbQuarter, surah: s.number, ayah: a.numberInSurah });
       pageSeq.push({ value: a.page, surah: s.number, ayah: a.numberInSurah });

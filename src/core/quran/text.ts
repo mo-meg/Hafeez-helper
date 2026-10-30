@@ -28,6 +28,11 @@ export interface AyahText {
   readonly tokens: readonly Token[];
 }
 
+/** Tanzil v1.1 encoding for small yeh inside a word. */
+export function applyTanzilTextEncodingUpdates(text: string): string {
+  return text.replace(/\u06e6(?=[\u064b-\u065f\u0670\u06d6-\u06ed]*[\u0621-\u064a])/g, '\u0640\u06e7');
+}
+
 export class QuranText {
   readonly dataset: QuranTextDataset;
   private readonly basmalaSkeletonWords: string[] | null;
@@ -52,7 +57,7 @@ export class QuranText {
     const index = toIndex(ref);
     const cached = this.cache.get(index);
     if (cached) return cached;
-    const raw = this.dataset.ayat[index - 1] ?? '';
+    const raw = applyTanzilTextEncodingUpdates(this.dataset.ayat[index - 1] ?? '');
     let text = raw;
     let basmalaPrefix: string | null = null;
     if (ref.ayah === 1 && ref.surah !== 1 && ref.surah !== 9 && this.basmalaSkeletonWords) {

@@ -7,11 +7,15 @@ division boundaries come from published datasets and are verified before use.
 
 | Item | Source | Licence | How it reaches the app |
 |---|---|---|---|
-| Uthmani text (`quran-uthmani`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-uthmani` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): verbatim copies only, attribution to Tanzil required | Downloaded on request in Settings, or ahead of time with `npm run data:fetch` into `public/data/quran-text.json` |
+| Uthmani text (`quran-uthmani`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-uthmani` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): attribution to Tanzil required | Downloaded from Settings and cached for offline use; can also be bundled with `npm run data:fetch` |
+| Simple text (`quran-simple`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-simple` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): attribution to Tanzil required | Downloaded on selection in Settings and cached for offline use |
 
 Handling rules:
 
-* Text is stored verbatim (diacritics, Uthmani orthography, pause marks). Normalization
+* Both styles use Hafs narration and the same ayah numbering. Text follows Tanzil's
+  published text-encoding updates (including tatweel + U+06E7 for
+  medial U+06E6 small yeh); word-final U+06E6 is retained. Other text remains verbatim
+  (diacritics, Uthmani orthography, pause marks). Normalization
   (`skeleton()` in `src/core/quran/tokenize.ts`) is used **only for comparisons**, never for display.
 * AlQuran.cloud prepends the basmala to the first ayah of each surah (except 1 and 9). The app
   detects it by comparing with the dataset's **own** text of 1:1 and shows it as a header, so
