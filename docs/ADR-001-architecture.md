@@ -28,8 +28,8 @@ Constraints of the build environment used for the first implementation:
 3. **No backend.** Nothing in the MVP needs one. Sync is a future enhancement; backups are
    JSON export/import.
 4. **Quran data is never typed by hand.** Text and per-ayah division metadata are obtained from
-   AlQuran.cloud (`quran-uthmani` edition, derived from Tanzil, CC BY 3.0), either at runtime
-   in the browser (one request, cached in IndexedDB) or ahead of time with
+   AlQuran.cloud (Tanzil Simple Hafs text by default, with Uthmani Hafs as an option; CC BY 3.0),
+   either at runtime in the browser (downloaded on first launch and cached in IndexedDB) or ahead of time with
    `npm run data:fetch`, which also cross-checks against Tanzil's `quran-data.js`.
    The app bundles only small, independently verified **anchors** (114 surah ayah counts,
    30 juz starts, hizb 1–11 starts, with citations) and uses them to *reject* any downloaded

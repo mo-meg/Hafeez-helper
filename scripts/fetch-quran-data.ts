@@ -2,7 +2,7 @@
 // Usage: npm run data:fetch
 //
 // Sources:
-//  - AlQuran.cloud /v1/quran/quran-uthmani  (Tanzil Uthmani text, CC BY 3.0, verbatim)
+//  - AlQuran.cloud /v1/quran/quran-simple  (Tanzil Simple Hafs text, CC BY 3.0)
 //  - AlQuran.cloud /v1/meta                  (independent division references)
 //  - Tanzil quran-data.js                    (original Tanzil metadata, CC BY 3.0)
 // Every list must agree across sources AND with the verified anchors, or nothing is written.

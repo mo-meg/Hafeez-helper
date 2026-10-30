@@ -54,8 +54,8 @@ function quranDataSection(app: App): HTMLElement {
   const d = q.divisions;
   const fileInput = h('input', { type: 'file', accept: 'application/json,.json', 'aria-label': tr('set.eighthsFile') });
   const textEdition = h('select', { 'aria-label': tr('set.textStyle'), 'data-key': 'quran-text-style' },
-    h('option', { value: QURAN_TEXT_EDITIONS.uthmani, selected: (t?.edition ?? QURAN_TEXT_EDITIONS.uthmani) === QURAN_TEXT_EDITIONS.uthmani }, tr('set.textUthmani')),
-    h('option', { value: QURAN_TEXT_EDITIONS.simple, selected: t?.edition === QURAN_TEXT_EDITIONS.simple }, tr('set.textSimple')),
+    h('option', { value: QURAN_TEXT_EDITIONS.simple, selected: (t?.edition ?? QURAN_TEXT_EDITIONS.simple) === QURAN_TEXT_EDITIONS.simple }, tr('set.textSimple')),
+    h('option', { value: QURAN_TEXT_EDITIONS.uthmani, selected: t?.edition === QURAN_TEXT_EDITIONS.uthmani }, tr('set.textUthmani')),
   );
   return section(
     'data',

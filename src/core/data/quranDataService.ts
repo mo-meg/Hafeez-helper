@@ -39,10 +39,10 @@ function isTextDataset(x: unknown): x is QuranTextDataset {
 }
 
 /**
- * Loads Quran text and division metadata, from (in order): the local cache (IndexedDB),
- * files produced by `npm run data:fetch` served at ./data/, or — only on explicit user
- * request — a download from AlQuran.cloud. Every division dataset is validated against the
- * verified anchors before use; invalid data is never used.
+ * Loads Quran text and division metadata from local storage or bundled data. If Hafs Simple
+ * text is not available locally, startup downloads it from AlQuran.cloud; a failed request
+ * leaves any local text or verified division anchors available. Divisions are validated
+ * against the verified anchors before use.
  */
 export class QuranDataService {
   private readonly cache: KeyValue;
@@ -77,12 +77,19 @@ export class QuranDataService {
       try {
         const validActiveEdition = activeEdition === QURAN_TEXT_EDITIONS.simple || activeEdition === QURAN_TEXT_EDITIONS.uthmani ? activeEdition : undefined;
         const selectedText = validActiveEdition ? await this.cache.get<unknown>(textKey(validActiveEdition)) : undefined;
-        const text = isTextDataset(selectedText) ? selectedText : isTextDataset(legacyText) ? legacyText : null;
+        const simpleText = await this.cache.get<unknown>(textKey(QURAN_TEXT_EDITIONS.simple));
+        const text = isTextDataset(selectedText) && selectedText.edition === validActiveEdition
+          ? selectedText
+          : isTextDataset(legacyText) ? legacyText : null;
         const state = this.activate(text, divisions, text ? 'cache' : 'none');
         const edition = text?.edition === QURAN_TEXT_EDITIONS.simple ? QURAN_TEXT_EDITIONS.simple : text?.edition === QURAN_TEXT_EDITIONS.uthmani ? QURAN_TEXT_EDITIONS.uthmani : undefined;
         if (edition && text && !isTextDataset(selectedText)) await this.cache.set(textKey(edition), text);
         if (edition) await this.cache.set(KEY_ACTIVE_EDITION, edition);
-        return state;
+        // Preserve Uthmani only when Simple is also cached, which means the user selected
+        // Uthmani after Simple became the default. Older installs only have Uthmani cached.
+        const keepUthmani = validActiveEdition === QURAN_TEXT_EDITIONS.uthmani && isTextDataset(simpleText) && simpleText.edition === QURAN_TEXT_EDITIONS.simple;
+        if (state.text?.edition === QURAN_TEXT_EDITIONS.simple || keepUthmani) return state;
+        return await this.loadDefaultSimple(state);
       } catch {
         // Corrupt or outdated cache: fall through to bundled data.
       }
@@ -92,13 +99,21 @@ export class QuranDataService {
       if (isTextDataset(t) && d) {
         const state = this.activate(t, d as DivisionDataset, 'bundled');
         await this.persist(t, d as DivisionDataset);
-        return state;
+        return state.text?.edition === QURAN_TEXT_EDITIONS.simple ? state : await this.loadDefaultSimple(state);
       }
     } catch {
       // No bundled data available — expected unless `npm run data:fetch` was run.
     }
     this.current = anchorState();
-    return this.current;
+    return await this.loadDefaultSimple(this.current);
+  }
+
+  private async loadDefaultSimple(fallback: QuranDataState): Promise<QuranDataState> {
+    try {
+      return await this.setEdition(QURAN_TEXT_EDITIONS.simple);
+    } catch {
+      return fallback;
+    }
   }
 
   private async fetchJson(url: string): Promise<unknown> {
@@ -126,7 +141,7 @@ export class QuranDataService {
 
   async setEdition(edition: QuranTextEdition, onProgress: (msg: string) => void = () => {}): Promise<QuranDataState> {
     const cached = await this.cache.get<unknown>(textKey(edition));
-    if (isTextDataset(cached)) {
+    if (isTextDataset(cached) && cached.edition === edition) {
       const state = this.activate(cached, this.current.divisions, 'cache');
       await this.cache.set(KEY_ACTIVE_EDITION, edition);
       return state;

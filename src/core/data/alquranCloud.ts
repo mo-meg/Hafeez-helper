@@ -15,7 +15,7 @@ export const ALQURAN_CLOUD = {
   mirrorBaseUrl: 'https://alquran.api.islamic.network/v1',
   fullQuranPath: (edition: string) => `/quran/${encodeURIComponent(edition)}`,
   metaPath: '/meta',
-  defaultEdition: 'quran-uthmani',
+  defaultEdition: 'quran-simple',
   license: 'Text: Tanzil Quran Text (CC BY 3.0, verbatim copies only, attribution to tanzil.net required).',
 } as const;
 

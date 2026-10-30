@@ -7,8 +7,8 @@ division boundaries come from published datasets and are verified before use.
 
 | Item | Source | Licence | How it reaches the app |
 |---|---|---|---|
-| Uthmani text (`quran-uthmani`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-uthmani` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): attribution to Tanzil required | Downloaded from Settings and cached for offline use; can also be bundled with `npm run data:fetch` |
-| Simple text (`quran-simple`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-simple` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): attribution to Tanzil required | Downloaded on selection in Settings and cached for offline use |
+| Uthmani text (`quran-uthmani`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-uthmani` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): attribution to Tanzil required | Downloaded from Settings and cached for offline use |
+| Simple text (`quran-simple`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-simple` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): attribution to Tanzil required | Downloaded automatically on first launch and cached for offline use; can also be bundled with `npm run data:fetch` |
 
 Handling rules:
 
