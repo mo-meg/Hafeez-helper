@@ -86,11 +86,18 @@ async function buildApp() {
     legalComments: 'linked',
     logLevel: 'info',
   };
-  /** Copies the bundled KFGQPC font under a stable, URL-safe name (the release file name has spaces). */
+  /**
+   * Copies the bundled KFGQPC font under a stable, URL-safe name (the release file name has spaces)
+   * and declares it inline in index.html. Both URLs are relative, so the font loads from a sub-path
+   * (GitHub Pages /repo/) as well as from the site root, and without fonts/fonts.css.
+   */
   const font = async () => {
     await mkdir(join(out, 'fonts'), { recursive: true });
     await writeFile(join(out, 'fonts', 'KFGQPC-Hafs-V30.ttf'), await readFile(join(root, 'public', 'KFGQPC-Hafs-V30', 'KFGQPC Hafs V30.ttf')));
     await writeFile(join(out, 'fonts', 'LICENSE-KFGQPC-Hafs.txt'), await readFile(join(root, 'public', 'fonts', 'LICENSE-KFGQPC-Hafs.txt')));
+    const html = await readFile(join(out, 'index.html'), 'utf8');
+    const face = '<style>@font-face{font-family:"KFGQPCHafs";src:url("fonts/KFGQPC-Hafs-V30.ttf") format("truetype");font-weight:normal;font-style:normal;font-display:swap}</style>';
+    if (!html.includes('@font-face')) await writeFile(join(out, 'index.html'), html.replace('</head>', `${face}</head>`));
   };
   const copyPublic = async () => {
     // The KFGQPC source folder (DOCX + font) is not part of the built app: the font is copied to

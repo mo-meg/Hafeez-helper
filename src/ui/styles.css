@@ -3,7 +3,8 @@
    muted gilt reserved for Quran structure (ayah markers, surah bands, division markers),
    red for marked mistakes only, leaf green for resolved marks.
    All layout uses logical properties so the same CSS serves Arabic (RTL) and English (LTR). */
-/* The Quran font is the bundled KFGQPC Hafs V30, declared in /fonts/fonts.css, linked from index.html. */
+/* The Quran font is the bundled KFGQPC Hafs V30 (declared in fonts/fonts.css and, for robustness,
+   inline in dist/index.html at build time — the font URL stays relative so sub-path hosting works). */
 :root {
   --paper: #f6f2e8;
   --surface: #fffdf8;

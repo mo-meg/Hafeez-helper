@@ -2,9 +2,13 @@
    It is the font the KFGQPC text was published with (see LICENSE-KFGQPC-Hafs.txt); the font may
    be used, copied and distributed unmodified, so the app ships it exactly as released (.ttf).
    This is the app's only Quran font; no locally-installed font is used.
-   Kept as plain CSS so esbuild never rewrites the URL; served as-is from /fonts/. */
+   Kept as plain CSS so esbuild never rewrites the URL; served as-is from fonts/.
+   The URL is RELATIVE to this stylesheet (fonts/…), so the font also loads from a sub-path
+   deployment such as https://user.github.io/repo/ — a root-absolute /fonts/… would 404 there. */
 @font-face {
   font-family: "KFGQPCHafs";
-  src: url("/fonts/KFGQPC-Hafs-V30.ttf") format("truetype");
+  src: url("KFGQPC-Hafs-V30.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
   font-display: swap;
 }
