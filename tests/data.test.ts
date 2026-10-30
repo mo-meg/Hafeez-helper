@@ -165,6 +165,15 @@ describe('QuranDataService', () => {
     assert.equal(st.origin, 'none');
     assert.equal(st.text, null);
   });
+  it('recoverData picks up data redeployed with the app before trying the network', async () => {
+    const cache = new MemoryKeyValue();
+    const fetcher = fakeFetcher(bundled);
+    const svc = new QuranDataService({ cache, fetcher });
+    const st = await svc.recoverData();
+    assert.equal(st.origin, 'bundled');
+    assert.ok(st.text);
+    assert.equal(fetcher.calls.some((u) => u.startsWith('https://')), false, 'no download when the bundled data is there');
+  });
   it('downloads divisions only, and rejects them when /meta disagrees', async () => {
     const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher(bundled) });
     await svc.init();

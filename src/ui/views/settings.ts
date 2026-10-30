@@ -39,6 +39,7 @@ function section(id: string, title: string, ...children: Parameters<typeof h>[2]
 
 /** Localizes the data service's progress messages (core reports them in English). */
 function progressText(m: string): string {
+  if (m.startsWith('Looking for the Quran data')) return tr('set.progLooking');
   if (m.startsWith('Downloading Quran division')) return tr('set.progDownload');
   if (m.startsWith('Main server unreachable')) return tr('set.progMirror');
   if (m.startsWith('Verifying division')) return tr('set.progVerify');
@@ -80,7 +81,7 @@ function quranDataSection(app: App): HTMLElement {
           const btn = e.currentTarget as HTMLButtonElement;
           btn.disabled = true;
           const ok = await app.act(async () => {
-            app.quran = await app.s.quran.downloadDivisions((m) => { status.textContent = progressText(m); });
+            app.quran = await app.s.quran.recoverData((m) => { status.textContent = progressText(m); });
           }, tr('set.downloaded'));
           btn.disabled = false;
           if (!ok) status.textContent = tr('set.downloadFailed');

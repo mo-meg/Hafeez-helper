@@ -1,6 +1,8 @@
-# Bundled Quran data (optional)
+# Bundled Quran data
 
-This folder is empty in the repository on purpose. Quran text is never typed or edited by hand.
+`quran-text.json` and `divisions.json` are committed here: the app has no runtime text download, so
+static hosting (GitHub Pages, Docker) serves `dist/data/` from these files. They are generated, never
+edited by hand — regenerate both after changing the app or its sources and commit the result.
 
 * `npm run data:import` (no network) converts the KFGQPC Hafs V30 DOCX in
   `public/KFGQPC-Hafs-V30/` into `quran-text.json` and verifies it: 114 surah titles, 6236 ayat,

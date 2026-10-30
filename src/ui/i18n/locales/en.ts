@@ -604,6 +604,7 @@ export const en = {
   'set.dEighths': 'Eighths source',
   'set.dataHelp': 'The text and its font ship with the app and work offline. The juz, hizb and page divisions are checked against verified anchors before use: ',
   'set.downloaded': 'Divisions downloaded and verified.',
+  'set.progLooking': 'Looking for the Quran data bundled with the app…',
   'set.progDownload': 'Downloading Quran division metadata from AlQuran.cloud…',
   'set.progMirror': 'Main server unreachable; trying the official mirror…',
   'set.progVerify': 'Verifying division boundaries…',

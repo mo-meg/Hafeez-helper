@@ -102,7 +102,8 @@ async function buildApp() {
     const missing = [];
     for (const f of ['quran-text.json', 'divisions.json']) if (!(await readFile(join(out, 'data', f)).catch(() => null))) missing.push(f);
     if (missing.length) {
-      console.warn(`\n⚠ dist/data is missing ${missing.join(' and ')} — the Quran reader will only list ayat by reference.\n  Run \`npm run data:import\` (KFGQPC text, offline) and \`npm run data:fetch\` (divisions, needs internet).\n`);
+      console.warn(`\n⚠ dist/data is missing ${missing.join(' and ')} — the Quran reader will only list ayat by reference.\n  Run \`npm run data:fetch\` (divisions, needs internet) and \`npm run data:import\` (KFGQPC text, offline),\n  then commit public/data/*.json.\n`);
+      if (process.env.CI) process.exit(1);
     }
     const files = ['./', './index.html', './main.js', './main.css', './fonts/fonts.css', './fonts/KFGQPC-Hafs-V30.ttf', './manifest.webmanifest', './icon.svg'];
     const hash = createHash('sha256');

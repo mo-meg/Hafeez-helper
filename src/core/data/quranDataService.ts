@@ -125,6 +125,19 @@ export class QuranDataService {
     await this.cache.set(KEY_DIVISIONS, divisions);
   }
 
+  /**
+   * Brings the data back when the reader has none. The dataset shipped with the app is tried first
+   * (a site that was just redeployed with `public/data/` needs no manual download); only then the
+   * division metadata is downloaded. Without the shipped text nothing here can change the text:
+   * the app is built with exactly one text, so the caller keeps the reference-only notice.
+   */
+  async recoverData(onProgress: (msg: string) => void = () => { }): Promise<QuranDataState> {
+    onProgress('Looking for the Quran data bundled with the app…');
+    const bundled = await this.bundledState();
+    if (bundled) return bundled;
+    return this.downloadDivisions(onProgress);
+  }
+
   /** Downloads the division metadata (juz / quarter / page) and checks it against AlQuran.cloud /meta. */
   async downloadDivisions(onProgress: (msg: string) => void = () => { }): Promise<QuranDataState> {
     let base: string = ALQURAN_CLOUD.baseUrl;

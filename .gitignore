@@ -5,8 +5,8 @@ dist-harness/
 .env
 .env.*
 !.env.example
-# Generated Quran data: `npm run data:fetch` (divisions, Tanzil CC BY 3.0) and `npm run data:import`
-# (text, from the KFGQPC release in public/KFGQPC-Hafs-V30/). Reproducible; commit only after
-# reviewing the licences in docs/DATA_SOURCES.md.
-public/data/*.json
-!public/data/README.md
+# Generated Quran data IS committed: the app has no runtime text download, and static hosting
+# (GitHub Pages, Docker) serves dist/data/ straight from these files:
+#   quran-text.json  from `npm run data:import` (KFGQPC Hafs V30, offline, no network)
+#   divisions.json   from `npm run data:fetch`    (Tanzil metadata via AlQuran.cloud, CC BY 3.0)
+# After changing either script, regenerate and commit both. Licences: docs/DATA_SOURCES.md.

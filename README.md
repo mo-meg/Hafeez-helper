@@ -68,11 +68,13 @@ npm run build
 npm start                # http://127.0.0.1:5173
 ```
 
-With both datasets in `public/data/` the build ships them, so the app needs no download on first
-run. Without them, the reader lists ayat by reference and you can still mark ayat and listen, and
+Both datasets are committed under `public/data/`, so a checkout (and the GitHub Pages deployment)
+already contains them and the build ships them — the app needs no download on first run. If they
+are missing, the build warns (and fails on CI), the reader lists ayat by reference, and
 *Settings → Quran text and divisions* offers to download the divisions (the KFGQPC text itself is
-always imported from the bundled release, never fetched from a server). Development with rebuild
-on change: `npm run dev`.
+always imported from the bundled release, never fetched from a server). After changing the import
+or fetch scripts, regenerate both files and commit them. Development with rebuild on change:
+`npm run dev`.
 
 The Quran text and font come from the official KFGQPC release kept in
 [`public/KFGQPC-Hafs-V30/`](public/KFGQPC-Hafs-V30/README.txt); see
