@@ -75,7 +75,7 @@ function quranDataSection(app: App): HTMLElement {
       'div',
       { class: 'row' },
       h('button', {
-        type: 'button', class: d.quarterStarts ? '' : 'primary', 'data-key': 'download-data', disabled: !t,
+        type: 'button', class: d.quarterStarts ? '' : 'primary', 'data-key': 'download-data',
         onclick: async (e: Event) => {
           const btn = e.currentTarget as HTMLButtonElement;
           btn.disabled = true;
@@ -333,7 +333,9 @@ function privacySection(app: App): HTMLElement {
 
 export function settingsView(app: App): Node {
   const focus = app.route.params.get('section');
-  if (focus) queueMicrotask(() => document.getElementById(`settings-${focus}`)?.scrollIntoView({ block: 'start' }));
+  // Run after the route has rendered this view (a microtask fires before the view is in the document,
+  // so a link such as the reader's "Download Quran data" would land on the page top instead).
+  if (focus) setTimeout(() => document.getElementById(`settings-${focus}`)?.scrollIntoView({ block: 'start' }), 0);
   return h(
     'div',
     null,

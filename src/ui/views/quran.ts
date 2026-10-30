@@ -391,7 +391,7 @@ export function quranView(app: App): Node {
     h('span', { id: 'marked-desc', class: 'sr-only' }, t('quran.markedDesc')),
     problem ? h('div', { class: 'notice warn', role: 'alert' }, problem) : null,
     !hasText
-      ? h('div', { class: 'notice info' }, h('p', null, t('quran.noText')), h('a', { class: 'btn', href: '#/settings?section=data' }, t('common.downloadQuranData')))
+      ? h('div', { class: 'notice info' }, h('p', null, t('quran.noText')), h('a', { class: 'btn', href: '#/settings?section=data', 'data-key': 'download-data' }, t('common.downloadQuranData')))
       : null,
     navigator(app, range),
     h('div', { class: 'reader-layout' }, h('div', null, stepLinks(app, range), legend(), mushaf), divisionPanel(app, range)),

@@ -97,6 +97,13 @@ async function buildApp() {
     // ./fonts/ by `font()` in copyPublic, and the dataset to ./data/ from public/data/.
     await copyDir(join(root, 'public'), out, (src) => !src.endsWith('sw.js') && !src.endsWith('README.md') && !src.startsWith(join(root, 'public', 'KFGQPC-Hafs-V30')));
     await font();
+    // The reader is useless without its text; say so at build time instead of silently shipping a
+    // build that only lists ayat by reference. `data:import` needs no network, data:fetch does.
+    const missing = [];
+    for (const f of ['quran-text.json', 'divisions.json']) if (!(await readFile(join(out, 'data', f)).catch(() => null))) missing.push(f);
+    if (missing.length) {
+      console.warn(`\n⚠ dist/data is missing ${missing.join(' and ')} — the Quran reader will only list ayat by reference.\n  Run \`npm run data:import\` (KFGQPC text, offline) and \`npm run data:fetch\` (divisions, needs internet).\n`);
+    }
     const files = ['./', './index.html', './main.js', './main.css', './fonts/fonts.css', './fonts/KFGQPC-Hafs-V30.ttf', './manifest.webmanifest', './icon.svg'];
     const hash = createHash('sha256');
     for (const f of ['main.js', 'main.css']) hash.update(await readFile(join(out, f)).catch(() => ''));

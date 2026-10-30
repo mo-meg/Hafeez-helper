@@ -2,7 +2,7 @@
 
 | Command | What it runs |
 |---|---|
-| `npm test` | 145 unit and integration tests (Node's built-in `node:test`, TypeScript run natively by Node ≥ 22.18) |
+| `npm test` | 150 unit and integration tests (Node's built-in `node:test`, TypeScript run natively by Node ≥ 22.18) |
 | `npm run typecheck` | `tsc` in strict mode (`noUncheckedIndexedAccess`, `erasableSyntaxOnly`, …) |
 | `npm run lint` | Project rules: no HTML injection, no `eval`, no `console.log`, no TODOs, and `src/core` must not touch the DOM or import UI/browser code |
 | `npm run test:e2e` | Builds the browser harness `dist-harness/harness.html`; open it in a browser to run 30 end-to-end journeys (English, Arabic, accounts) |
@@ -14,7 +14,8 @@
 | File | Tests | Covers |
 |---|---|---|
 | `quran.test.ts` | 23 | 6236 total; index ↔ reference for every ayah; cross-surah navigation; canonical sorting; verified juz ranges; Hizb 5 = 2:253–3:14; quarters/eighths tile hizbs exactly; dataset validation rejects wrong anchors, counts, order, the 3:92 Juz 4 variant, inconsistent eighths; scopes |
-| `data.test.ts` | 18 | Tokenizer keeps every character, skips pause marks; basmala-prefix detection; AlQuran.cloud parser derives boundaries and rejects bad counts/sequences; Tanzil `quran-data.js` parser; eighths import; data service: anchors-only start, download → cache → offline reload, /meta mismatch rejection, mirror fallback, eighths import/removal |
+| `data.test.ts` | 18 | Tokenizer keeps every character, skips pause marks; basmala-prefix detection; AlQuran.cloud parser derives boundaries and rejects bad counts/sequences; Tanzil `quran-data.js` parser; eighths import; data service: anchors-only start, bundled text → cache → offline reload, a damaged cache never hides the bundled text, divisions download, /meta mismatch rejection, mirror fallback, eighths import/removal |
+| `kfgqpc-import.test.ts` | 5 | The KFGQPC DOCX importer on a synthetic WordprocessingML document: ayat split at `۝N`, line breaks dropped (never spaced), basmala lines recognised, missing/swapped/extra ayat rejected, standalone marks reported |
 | `mistakes.test.ts` | 13 | Word and ayah marking; validation; no duplicates (recurrence instead); note editing; resolve/reopen with preserved history; status rules; one recall applied to all words of an ayah; never auto-resolves; schedule override; explicit deletion; filters |
 | `review.test.ts` | 15 | Policy table; streak once per session; scheduler ladder and factors; quality score: null without data, unaffected by playback, moves with outcomes, per-session dedupe, staleness, reopened mistakes, scope |
 | `playlist.test.ts` | 14 | Only in-scope unresolved mistakes; Quran order; one entry per ayah with grouped words; per-word practice; context only on request; overlapping windows merge; surah-bounded context; category/status filters; empty playlist; exact repetition counts (5 = five plays); group and playlist passes; pauses; combined sessions; duration estimate |

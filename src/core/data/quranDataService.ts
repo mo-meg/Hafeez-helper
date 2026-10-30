@@ -20,6 +20,19 @@ export interface QuranDataState {
 const KEY_TEXT = 'text';
 const KEY_DIVISIONS = 'divisions';
 
+/** Startup must never hang: a request that has not answered by then counts as unavailable. */
+const FETCH_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new DataFormatError(message)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error: unknown) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
 export async function sha256Hex(text: string): Promise<string | undefined> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) return undefined;
@@ -66,34 +79,45 @@ export class QuranDataService {
   }
 
   async init(): Promise<QuranDataState> {
+    const cached = await this.cachedState();
+    if (cached) return cached;
+    const bundled = await this.bundledState();
+    if (bundled) return bundled;
+    // Nothing usable anywhere: keep the verified division anchors so the app still starts.
+    this.current = anchorState();
+    return this.current;
+  }
+
+  /** The last verified copy, if the cache is intact. Damaged entries are dropped so they cannot block a reload. */
+  private async cachedState(): Promise<QuranDataState | null> {
     const [cachedText, cachedDivisions] = await Promise.all([this.cache.get<unknown>(KEY_TEXT), this.cache.get<DivisionDataset>(KEY_DIVISIONS)]);
-    if (isTextDataset(cachedText) && cachedDivisions) {
-      try {
-        return this.activate(cachedText, cachedDivisions, 'cache');
-      } catch {
-        // Corrupt or outdated cache: fall through to the bundled data.
-      }
+    if (!isTextDataset(cachedText) || !cachedDivisions) return null;
+    try {
+      return this.activate(cachedText, cachedDivisions, 'cache');
+    } catch {
+      await Promise.all([this.cache.delete(KEY_TEXT), this.cache.delete(KEY_DIVISIONS)]);
+      return null;
     }
+  }
+
+  /** Loads the dataset shipped with the app (public/data/). Fails when a file is missing or damaged. */
+  private async bundledState(): Promise<QuranDataState | null> {
     try {
       const [t, d] = await Promise.all([this.fetchJson(`${this.bundledBase}/quran-text.json`), this.fetchJson(`${this.bundledBase}/divisions.json`)]);
-      if (isTextDataset(t) && d) {
-        const state = this.activate(t, d as DivisionDataset, 'bundled');
-        await this.persist(t, d as DivisionDataset);
-        return state;
-      }
-      throw new DataFormatError('The bundled Quran data is incomplete.');
-    } catch (e) {
-      if (e instanceof DataFormatError && e.message.includes('incomplete')) throw e;
-      // Bundled data absent: keep the verified division anchors so the app still starts.
-      this.current = anchorState();
-      return this.current;
+      if (!isTextDataset(t) || !d) return null;
+      const state = this.activate(t, d as DivisionDataset, 'bundled');
+      await this.persist(t, d as DivisionDataset);
+      return state;
+    } catch {
+      return null;
     }
   }
 
   private async fetchJson(url: string): Promise<unknown> {
-    const res = await this.fetcher(url);
+    const res = await withTimeout(this.fetcher(url), FETCH_TIMEOUT_MS, `Timed out requesting ${url}`);
     if (!res.ok) throw new DataFormatError(`HTTP ${res.status} for ${url}`);
-    return res.json();
+    // A body that never arrives must not hold up startup: the reader then opens with references only.
+    return await withTimeout(res.json(), FETCH_TIMEOUT_MS, `Timed out reading ${url}`);
   }
 
   private async persist(text: QuranTextDataset, divisions: DivisionDataset) {
@@ -157,10 +181,12 @@ export class QuranDataService {
     return state;
   }
 
-  /** Clears cached copies; the bundled text and divisions are loaded again. */
+  /** Clears cached copies, then reloads the dataset shipped with the app. */
   async clearCache(): Promise<QuranDataState> {
     await this.cache.delete(KEY_TEXT);
     await this.cache.delete(KEY_DIVISIONS);
+    const bundled = await this.bundledState();
+    if (bundled) return bundled;
     this.current = anchorState();
     return this.current;
   }

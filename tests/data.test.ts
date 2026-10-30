@@ -140,6 +140,31 @@ describe('QuranDataService', () => {
     assert.equal(st2.text?.edition, 'synthetic-fixture');
   });
 
+  it('uses the bundled text when the cached copy is damaged, and clears the damaged entries', async () => {
+    const cache = new MemoryKeyValue();
+    await cache.set('text', syntheticText());
+    await cache.set('divisions', { schema: 'hafeez-divisions/1', id: 'broken', juzStarts: [[1, 1]], quarterStarts: [[1, 1]] });
+    const svc = new QuranDataService({ cache, fetcher: fakeFetcher(bundled) });
+    const st = await svc.init();
+    assert.equal(st.origin, 'bundled');
+    assert.equal(st.text?.edition, 'synthetic-fixture');
+    assert.equal((await cache.get<{ id?: string }>('divisions'))?.id, 'synthetic-fixture', 'the intact bundled divisions replaced the damaged copy');
+  });
+  it('reloads the bundled data when the cache is cleared, instead of dropping to anchors only', async () => {
+    const cache = new MemoryKeyValue();
+    const svc = new QuranDataService({ cache, fetcher: fakeFetcher(bundled) });
+    await svc.init();
+    const st = await svc.clearCache();
+    assert.equal(st.origin, 'bundled');
+    assert.ok(st.text, 'Remove data must not leave the reader without text');
+  });
+  it('starts with standalone references when a bundled response body never arrives', async () => {
+    const fetcher = () => new Promise<never>(() => {}); // a request that never answers
+    const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher });
+    const st = await svc.init();
+    assert.equal(st.origin, 'none');
+    assert.equal(st.text, null);
+  });
   it('downloads divisions only, and rejects them when /meta disagrees', async () => {
     const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher(bundled) });
     await svc.init();

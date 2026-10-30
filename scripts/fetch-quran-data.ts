@@ -1,4 +1,5 @@
-// Downloads and verifies Quran text + division metadata into public/data/ (needs internet).
+// Downloads and verifies the juz / hizb-quarter / page metadata into public/data/divisions.json
+// (needs internet). Does NOT write Quran text: that comes from `npm run data:import` (KFGQPC).
 // Usage: npm run data:fetch
 //
 // Sources:
@@ -6,7 +7,6 @@
 //  - AlQuran.cloud /v1/meta                  (independent division references)
 //  - Tanzil quran-data.js                    (original Tanzil metadata, CC BY 3.0)
 // Every list must agree across sources AND with the verified anchors, or nothing is written.
-import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,9 +58,10 @@ if (problems.length) {
   process.exit(1);
 }
 
-const sha256 = createHash('sha256').update(parsed.text.ayat.join('\n')).digest('hex');
+// Division metadata only: the Quran TEXT is the KFGQPC Hafs V30 dataset written by
+// `npm run data:import`. Writing a text here would silently replace it, so this script never does.
 await mkdir(outDir, { recursive: true });
-await writeFile(join(outDir, 'quran-text.json'), JSON.stringify({ ...parsed.text, sha256 }));
 await writeFile(join(outDir, 'divisions.json'), JSON.stringify(parsed.divisions, null, 1));
-console.log(`\nWrote public/data/quran-text.json (sha256 ${sha256}) and public/data/divisions.json.`);
-console.log('Attribution required: Quran text from Tanzil.net (CC BY 3.0), via AlQuran.cloud.');
+console.log(`\nWrote public/data/divisions.json (${parsed.divisions.juzStarts.length} juz, ${parsed.divisions.quarterStarts?.length ?? 0} quarters, ${parsed.divisions.pageStarts?.length ?? 0} pages).`);
+console.log('Quran text is NOT written by this script: run `npm run data:import` for the KFGQPC text.');
+console.log('Attribution required: division metadata from Tanzil.net (CC BY 3.0), via AlQuran.cloud.');
