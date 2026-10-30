@@ -18,6 +18,7 @@
     "test:data": "node --test --test-reporter=spec tests/data/*.datatest.ts",
     "test:e2e": "node scripts/build.mjs --harness && node scripts/serve.mjs --check-harness",
     "data:fetch": "node scripts/fetch-quran-data.ts",
+    "data:import": "node scripts/import-kfgqpc.ts",
     "verify": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {

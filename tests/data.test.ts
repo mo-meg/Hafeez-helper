@@ -94,7 +94,7 @@ function fakeFetcher(routes: Record<string, unknown>): Fetcher & { calls: string
   const calls: string[] = [];
   const f = (async (url: string) => {
     calls.push(url);
-    if (!(url in routes)) return { ok: false, status: 404, json: async () => ({}) };
+    if (!(url in routes) || routes[url] === undefined) return { ok: false, status: 404, json: async () => ({}) };
     return { ok: true, status: 200, json: async () => structuredClone(routes[url]) };
   }) as Fetcher & { calls: string[] };
   f.calls = calls;
@@ -111,9 +111,11 @@ describe('QuranDataService', () => {
     },
   };
   const routes = {
-    'https://api.alquran.cloud/v1/quran/quran-uthmani': syntheticAlQuranCloudResponse(),
+    'https://api.alquran.cloud/v1/quran/quran-simple': syntheticAlQuranCloudResponse(),
     'https://api.alquran.cloud/v1/meta': meta,
   };
+  /** route table = bundled `public/data/` files + AlQuran.cloud endpoints */
+  const bundled = { './data/quran-text.json': syntheticText(), './data/divisions.json': syntheticDivisions(), ...routes };
 
   it('starts with verified anchors only when nothing is cached or bundled', async () => {
     const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher({}) });
@@ -123,49 +125,62 @@ describe('QuranDataService', () => {
     assert.equal(st.index.has('hizb'), false);
   });
 
-  it('downloads, cross-checks, caches, and reloads offline from cache', async () => {
+  it('loads the single bundled text edition, then reloads offline from cache', async () => {
     const cache = new MemoryKeyValue();
-    const svc = new QuranDataService({ cache, fetcher: fakeFetcher(routes) });
-    const st = await svc.downloadFromAlQuranCloud();
-    assert.equal(st.origin, 'download');
-    assert.ok(st.text);
-    assert.match(st.text.dataset.sha256 ?? '', /^[0-9a-f]{64}$/);
+    const fetched = fakeFetcher(bundled);
+    const svc = new QuranDataService({ cache, fetcher: fetched });
+    const st = await svc.init();
+    assert.equal(st.origin, 'bundled');
+    assert.equal(st.text?.edition, 'synthetic-fixture');
+    assert.deepEqual(st.index.range('hizb', 5).start, { surah: 2, ayah: 253 });
+    assert.deepEqual([...fetched.calls].sort(), ['./data/divisions.json', './data/quran-text.json'], 'startup never fetches Quran text from the network');
     const offline = new QuranDataService({ cache, fetcher: fakeFetcher({}) });
     const st2 = await offline.init();
     assert.equal(st2.origin, 'cache');
-    assert.deepEqual(st2.index.range('hizb', 5).start, { surah: 2, ayah: 253 });
+    assert.equal(st2.text?.edition, 'synthetic-fixture');
   });
 
-  it('rejects data when /meta disagrees with the per-ayah metadata', async () => {
+  it('downloads divisions only, and rejects them when /meta disagrees', async () => {
+    const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher(bundled) });
+    await svc.init();
+    const st = await svc.downloadDivisions();
+    assert.equal(st.origin, 'download');
+    assert.equal(st.text?.edition, 'synthetic-fixture', 'the bundled text stays the active text');
     const badMeta = structuredClone(meta);
     badMeta.data.hizbQuarters.references[50] = { surah: 9, ayah: 9 };
-    const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher({ ...routes, 'https://api.alquran.cloud/v1/meta': badMeta }) });
-    await assert.rejects(svc.downloadFromAlQuranCloud(), /disagree/);
-    assert.equal(svc.state.origin, 'none');
+    const bad = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher({ ...bundled, 'https://api.alquran.cloud/v1/meta': badMeta }) });
+    await bad.init();
+    await assert.rejects(bad.downloadDivisions(), /disagree/);
+    assert.equal(bad.state.origin, 'bundled');
   });
 
   it('falls back to the official mirror when the main host fails', async () => {
     const mirror = {
-      'https://alquran.api.islamic.network/v1/quran/quran-uthmani': routes['https://api.alquran.cloud/v1/quran/quran-uthmani'],
+      'https://alquran.api.islamic.network/v1/quran/quran-simple': routes['https://api.alquran.cloud/v1/quran/quran-simple'],
       'https://alquran.api.islamic.network/v1/meta': meta,
     };
-    const fetcher = fakeFetcher(mirror);
+    // Only the mirror answers: the main host's routes are explicitly unavailable.
+    const fetcher = fakeFetcher({ ...bundled, ...mirror, 'https://api.alquran.cloud/v1/quran/quran-simple': undefined, 'https://api.alquran.cloud/v1/meta': undefined });
     const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher });
-    const st = await svc.downloadFromAlQuranCloud();
+    await svc.init();
+    const st = await svc.downloadDivisions();
     assert.equal(st.origin, 'download');
-    assert.equal(fetcher.calls[0], 'https://api.alquran.cloud/v1/quran/quran-uthmani');
+    const downloads = fetcher.calls.filter((u) => u.startsWith('https://') && u.includes('/quran/'));
+    assert.deepEqual(downloads, ['https://api.alquran.cloud/v1/quran/quran-simple', 'https://alquran.api.islamic.network/v1/quran/quran-simple'], 'main host first, then the mirror');
     assert.ok(fetcher.calls.includes('https://alquran.api.islamic.network/v1/meta'));
+
   });
 
   it('reports a clear error when no host is reachable and keeps the previous state', async () => {
-    const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher({}) });
-    await assert.rejects(svc.downloadFromAlQuranCloud(), /Could not download/);
-    assert.equal(svc.state.origin, 'none');
+    const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher({ './data/quran-text.json': syntheticText(), './data/divisions.json': syntheticDivisions() }) });
+    await svc.init();
+    await assert.rejects(svc.downloadDivisions(), /Could not download/);
+    assert.equal(svc.state.origin, 'bundled');
   });
 
   it('imports a consistent eighths list and rejects an inconsistent one', async () => {
-    const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher(routes) });
-    await svc.downloadFromAlQuranCloud();
+    const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher(bundled) });
+    await svc.init();
     const eighths = syntheticDivisions({ withEighths: true }).eighthStarts ?? [];
     const st = await svc.importEighths({ label: 'Test eighths', eighthStarts: eighths });
     assert.equal(st.index.count('eighth'), 480);

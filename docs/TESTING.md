@@ -6,7 +6,7 @@
 | `npm run typecheck` | `tsc` in strict mode (`noUncheckedIndexedAccess`, `erasableSyntaxOnly`, …) |
 | `npm run lint` | Project rules: no HTML injection, no `eval`, no `console.log`, no TODOs, and `src/core` must not touch the DOM or import UI/browser code |
 | `npm run test:e2e` | Builds the browser harness `dist-harness/harness.html`; open it in a browser to run 30 end-to-end journeys (English, Arabic, accounts) |
-| `npm run test:data` | Checks the real dataset in `public/data` (after `npm run data:fetch`); skipped if absent |
+| `npm run test:data` | Checks the real datasets in `public/data` (after `npm run data:import` and `npm run data:fetch`); skipped if absent |
 | `npm run verify` | lint, typecheck, tests, and production build |
 
 ## Unit and integration tests (`tests/`)

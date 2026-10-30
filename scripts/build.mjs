@@ -86,9 +86,18 @@ async function buildApp() {
     legalComments: 'linked',
     logLevel: 'info',
   };
+  /** Copies the bundled KFGQPC font under a stable, URL-safe name (the release file name has spaces). */
+  const font = async () => {
+    await mkdir(join(out, 'fonts'), { recursive: true });
+    await writeFile(join(out, 'fonts', 'KFGQPC-Hafs-V30.ttf'), await readFile(join(root, 'public', 'KFGQPC-Hafs-V30', 'KFGQPC Hafs V30.ttf')));
+    await writeFile(join(out, 'fonts', 'LICENSE-KFGQPC-Hafs.txt'), await readFile(join(root, 'public', 'fonts', 'LICENSE-KFGQPC-Hafs.txt')));
+  };
   const copyPublic = async () => {
-    await copyDir(join(root, 'public'), out, (src) => !src.endsWith('sw.js') && !src.endsWith('README.md'));
-    const files = ['./', './index.html', './main.js', './main.css', './fonts/fonts.css', './fonts/AmiriQuran.woff2', './manifest.webmanifest', './icon.svg'];
+    // The KFGQPC source folder (DOCX + font) is not part of the built app: the font is copied to
+    // ./fonts/ by `font()` in copyPublic, and the dataset to ./data/ from public/data/.
+    await copyDir(join(root, 'public'), out, (src) => !src.endsWith('sw.js') && !src.endsWith('README.md') && !src.startsWith(join(root, 'public', 'KFGQPC-Hafs-V30')));
+    await font();
+    const files = ['./', './index.html', './main.js', './main.css', './fonts/fonts.css', './fonts/KFGQPC-Hafs-V30.ttf', './manifest.webmanifest', './icon.svg'];
     const hash = createHash('sha256');
     for (const f of ['main.js', 'main.css']) hash.update(await readFile(join(out, f)).catch(() => ''));
     const sw = (await readFile(join(root, 'public/sw.js'), 'utf8'))

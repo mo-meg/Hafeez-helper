@@ -1,8 +1,10 @@
-/* Bundled Quran font (Amiri Quran, SIL OFL 1.1 — see LICENSE-Amiri.txt).
-   This is the app's primary Quran font; no locally-installed font is used.
+/* Bundled Quran font: KFGQPC Hafs V30 (King Fahd Glorious Quran Printing Complex, Madinah).
+   It is the font the KFGQPC text was published with (see LICENSE-KFGQPC-Hafs.txt); the font may
+   be used, copied and distributed unmodified, so the app ships it exactly as released (.ttf).
+   This is the app's only Quran font; no locally-installed font is used.
    Kept as plain CSS so esbuild never rewrites the URL; served as-is from /fonts/. */
 @font-face {
-  font-family: "AmiriQuran";
-  src: url("/fonts/AmiriQuran.woff2") format("woff2");
+  font-family: "KFGQPCHafs";
+  src: url("/fonts/KFGQPC-Hafs-V30.ttf") format("truetype");
   font-display: swap;
 }

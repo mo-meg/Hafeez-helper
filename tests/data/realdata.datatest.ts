@@ -1,6 +1,7 @@
 /**
- * Checks against the REAL downloaded dataset (public/data/*.json produced by `npm run data:fetch`).
- * Run with `npm run test:data`. Skipped when the data has not been downloaded.
+ * Checks against the REAL dataset (public/data/*.json): the text is produced from the KFGQPC Hafs
+ * V30 release by `npm run data:import`, the divisions by `npm run data:fetch`.
+ * Run with `npm run test:data`. Skipped when the data has not been generated.
  * Expected values come from independent sources cited in src/core/quran/anchors.ts, plus
  * AlQuran.cloud's documented sample for 2:255 (hizbQuarter 17, page 42, juz 3).
  */
@@ -19,12 +20,14 @@ const textFile = join(dir, 'quran-text.json');
 const divFile = join(dir, 'divisions.json');
 const available = existsSync(textFile) && existsSync(divFile);
 
-describe('real Quran dataset (public/data)', { skip: available ? false : 'run `npm run data:fetch` first' }, () => {
+describe('real Quran dataset (public/data)', { skip: available ? false : 'run `npm run data:fetch` and `npm run data:import` first' }, () => {
   const text = available ? (JSON.parse(readFileSync(textFile, 'utf8')) as QuranTextDataset) : null;
   const div = available ? (JSON.parse(readFileSync(divFile, 'utf8')) as DivisionDataset) : null;
 
-  it('has 6236 non-empty ayat and a matching checksum', () => {
+  it('has 6236 non-empty ayat of the KFGQPC edition and a matching checksum', () => {
     assert.ok(text);
+    assert.equal(text.edition, 'kfgqpc-hafs-v30');
+    assert.match(text.source.name, /KFGQPC/);
     assert.equal(text.ayat.length, 6236);
     assert.ok(text.ayat.every((a) => a.trim().length > 0));
     assert.equal(createHash('sha256').update(text.ayat.join('\n')).digest('hex'), text.sha256);
@@ -56,6 +59,22 @@ describe('real Quran dataset (public/data)', { skip: available ? false : 'run `n
     assert.ok(text);
     const q = new QuranText(text);
     assert.notEqual(q.ayah({ surah: 2, ayah: 1 }).basmalaPrefix, null);
+    assert.equal(q.ayah({ surah: 2, ayah: 1 }).text, 'الٓمٓ', 'the prefix is not part of the ayah');
     assert.equal(q.ayah({ surah: 9, ayah: 1 }).basmalaPrefix, null);
+  });
+  it('shows the KFGQPC encoding as published (no Tanzil rewrite) and keeps the sajda sign inside words', () => {
+    assert.ok(text);
+    const q = new QuranText(text);
+    // Ayat 1 of surahs 2–114 are displayed as a basmala header plus the ayah; nothing else changes.
+    const shown = Array.from({ length: 6236 }, (_, i) => {
+      const a = q.ayahAt(i + 1);
+      return a.basmalaPrefix ? `${a.basmalaPrefix} ${a.text}` : a.text;
+    }).join(' ');
+    assert.equal(shown, text.ayat.join(' '), 'displayed text is the dataset, character for character');
+    assert.ok(shown.includes('\u06e1'), 'sukun is U+06E1 in this edition');
+    // This release writes small yeh as U+06E6 (it has its own U+06E7 only in النَّبِيِّـۧنَ);
+    // QuranText must apply Tanzil's U+06E6 -> tatweel + U+06E7 rewrite to Tanzil text only.
+    assert.ok(shown.includes('\u06e6'), 'small yeh stays U+06E6 as published');
+    assert.ok(/[\u0621-\u064a][\u064b-\u0652]*\u06e9/u.test(shown), 'the sajda sign is attached to a word');
   });
 });

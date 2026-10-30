@@ -3,7 +3,7 @@ import { validateDivisionDataset, type ValidationResult } from '../quran/divisio
 import { QuranText, type QuranTextDataset } from '../quran/text.ts';
 import { TOTAL_AYAT } from '../quran/surahs.ts';
 import type { KeyValue } from '../storage/store.ts';
-import { ALQURAN_CLOUD, DataFormatError, diffStartLists, parseAlQuranCloudFullQuran, parseAlQuranCloudMeta, QURAN_TEXT_EDITIONS, type QuranTextEdition } from './alquranCloud.ts';
+import { ALQURAN_CLOUD, DataFormatError, diffStartLists, parseAlQuranCloudFullQuran, parseAlQuranCloudMeta } from './alquranCloud.ts';
 import { parseEighthsFile, withEighths } from './eighthsImport.ts';
 
 export type Fetcher = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
@@ -18,8 +18,6 @@ export interface QuranDataState {
 }
 
 const KEY_TEXT = 'text';
-const KEY_ACTIVE_EDITION = 'activeTextEdition';
-const textKey = (edition: QuranTextEdition) => `text:${edition}`;
 const KEY_DIVISIONS = 'divisions';
 
 export async function sha256Hex(text: string): Promise<string | undefined> {
@@ -33,16 +31,16 @@ function anchorState(): QuranDataState {
   return { text: null, index: new DivisionIndex(ANCHOR_ONLY_DATASET), divisions: ANCHOR_ONLY_DATASET, validation: validateDivisionDataset(ANCHOR_ONLY_DATASET), origin: 'none' };
 }
 
-function isTextDataset(x: unknown): x is QuranTextDataset {
+export function isTextDataset(x: unknown): x is QuranTextDataset {
   const o = x as QuranTextDataset | undefined;
   return !!o && o.schema === 'hafeez-text/1' && Array.isArray(o.ayat) && o.ayat.length === TOTAL_AYAT && o.ayat.every((a) => typeof a === 'string');
 }
 
 /**
- * Loads Quran text and division metadata from local storage or bundled data. If Hafs Simple
- * text is not available locally, startup downloads it from AlQuran.cloud; a failed request
- * leaves any local text or verified division anchors available. Divisions are validated
- * against the verified anchors before use.
+ * Loads the KFGQPC Hafs V30 Quran text and the division metadata from local storage or from the
+ * bundled data in `public/data/` (produced by `npm run data:fetch` + `npm run data:import`).
+ * There is exactly one text: the app never fetches a different edition at runtime, so word
+ * positions recorded in mistakes always refer to the same mushaf text.
  */
 export class QuranDataService {
   private readonly cache: KeyValue;
@@ -68,30 +66,12 @@ export class QuranDataService {
   }
 
   async init(): Promise<QuranDataState> {
-    const [activeEdition, legacyText, divisions] = await Promise.all([
-      this.cache.get<QuranTextEdition>(KEY_ACTIVE_EDITION),
-      this.cache.get<unknown>(KEY_TEXT),
-      this.cache.get<DivisionDataset>(KEY_DIVISIONS),
-    ]);
-    if (divisions) {
+    const [cachedText, cachedDivisions] = await Promise.all([this.cache.get<unknown>(KEY_TEXT), this.cache.get<DivisionDataset>(KEY_DIVISIONS)]);
+    if (isTextDataset(cachedText) && cachedDivisions) {
       try {
-        const validActiveEdition = activeEdition === QURAN_TEXT_EDITIONS.simple || activeEdition === QURAN_TEXT_EDITIONS.uthmani ? activeEdition : undefined;
-        const selectedText = validActiveEdition ? await this.cache.get<unknown>(textKey(validActiveEdition)) : undefined;
-        const simpleText = await this.cache.get<unknown>(textKey(QURAN_TEXT_EDITIONS.simple));
-        const text = isTextDataset(selectedText) && selectedText.edition === validActiveEdition
-          ? selectedText
-          : isTextDataset(legacyText) ? legacyText : null;
-        const state = this.activate(text, divisions, text ? 'cache' : 'none');
-        const edition = text?.edition === QURAN_TEXT_EDITIONS.simple ? QURAN_TEXT_EDITIONS.simple : text?.edition === QURAN_TEXT_EDITIONS.uthmani ? QURAN_TEXT_EDITIONS.uthmani : undefined;
-        if (edition && text && !isTextDataset(selectedText)) await this.cache.set(textKey(edition), text);
-        if (edition) await this.cache.set(KEY_ACTIVE_EDITION, edition);
-        // Preserve Uthmani only when Simple is also cached, which means the user selected
-        // Uthmani after Simple became the default. Older installs only have Uthmani cached.
-        const keepUthmani = validActiveEdition === QURAN_TEXT_EDITIONS.uthmani && isTextDataset(simpleText) && simpleText.edition === QURAN_TEXT_EDITIONS.simple;
-        if (state.text?.edition === QURAN_TEXT_EDITIONS.simple || keepUthmani) return state;
-        return await this.loadDefaultSimple(state);
+        return this.activate(cachedText, cachedDivisions, 'cache');
       } catch {
-        // Corrupt or outdated cache: fall through to bundled data.
+        // Corrupt or outdated cache: fall through to the bundled data.
       }
     }
     try {
@@ -99,20 +79,14 @@ export class QuranDataService {
       if (isTextDataset(t) && d) {
         const state = this.activate(t, d as DivisionDataset, 'bundled');
         await this.persist(t, d as DivisionDataset);
-        return state.text?.edition === QURAN_TEXT_EDITIONS.simple ? state : await this.loadDefaultSimple(state);
+        return state;
       }
-    } catch {
-      // No bundled data available — expected unless `npm run data:fetch` was run.
-    }
-    this.current = anchorState();
-    return await this.loadDefaultSimple(this.current);
-  }
-
-  private async loadDefaultSimple(fallback: QuranDataState): Promise<QuranDataState> {
-    try {
-      return await this.setEdition(QURAN_TEXT_EDITIONS.simple);
-    } catch {
-      return fallback;
+      throw new DataFormatError('The bundled Quran data is incomplete.');
+    } catch (e) {
+      if (e instanceof DataFormatError && e.message.includes('incomplete')) throw e;
+      // Bundled data absent: keep the verified division anchors so the app still starts.
+      this.current = anchorState();
+      return this.current;
     }
   }
 
@@ -122,45 +96,28 @@ export class QuranDataService {
     return res.json();
   }
 
-  private async persist(text: QuranTextDataset | null, divisions: DivisionDataset) {
-    if (text) {
-      await this.cache.set(KEY_TEXT, text);
-      const edition = text.edition === QURAN_TEXT_EDITIONS.simple ? QURAN_TEXT_EDITIONS.simple : text.edition === QURAN_TEXT_EDITIONS.uthmani ? QURAN_TEXT_EDITIONS.uthmani : undefined;
-      if (edition) {
-        await this.cache.set(textKey(edition), text);
-        await this.cache.set(KEY_ACTIVE_EDITION, edition);
-      }
-    }
+  private async persist(text: QuranTextDataset, divisions: DivisionDataset) {
+    await this.cache.set(KEY_TEXT, text);
     await this.cache.set(KEY_DIVISIONS, divisions);
   }
 
-  /** Downloads text + per-ayah metadata (one request) and cross-checks against /meta. */
-  async downloadFromAlQuranCloud(onProgress: (msg: string) => void = () => {}): Promise<QuranDataState> {
-    return this.setEdition(QURAN_TEXT_EDITIONS.uthmani, onProgress);
-  }
-
-  async setEdition(edition: QuranTextEdition, onProgress: (msg: string) => void = () => {}): Promise<QuranDataState> {
-    const cached = await this.cache.get<unknown>(textKey(edition));
-    if (isTextDataset(cached) && cached.edition === edition) {
-      const state = this.activate(cached, this.current.divisions, 'cache');
-      await this.cache.set(KEY_ACTIVE_EDITION, edition);
-      return state;
-    }
-    onProgress('Downloading Quran text and metadata from AlQuran.cloud…');
+  /** Downloads the division metadata (juz / quarter / page) and checks it against AlQuran.cloud /meta. */
+  async downloadDivisions(onProgress: (msg: string) => void = () => { }): Promise<QuranDataState> {
     let base: string = ALQURAN_CLOUD.baseUrl;
     let json: unknown;
+    onProgress('Downloading Quran division metadata from AlQuran.cloud…');
     try {
-      json = await this.fetchJson(`${base}${ALQURAN_CLOUD.fullQuranPath(edition)}`);
+      json = await this.fetchJson(`${base}${ALQURAN_CLOUD.fullQuranPath(ALQURAN_CLOUD.defaultEdition)}`);
     } catch (first) {
       onProgress('Main server unreachable; trying the official mirror…');
       base = ALQURAN_CLOUD.mirrorBaseUrl;
       try {
-        json = await this.fetchJson(`${base}${ALQURAN_CLOUD.fullQuranPath(edition)}`);
+        json = await this.fetchJson(`${base}${ALQURAN_CLOUD.fullQuranPath(ALQURAN_CLOUD.defaultEdition)}`);
       } catch {
         throw new DataFormatError(`Could not download the Quran data (${first instanceof Error ? first.message : String(first)}). Check your connection and try again.`);
       }
     }
-    onProgress('Verifying text structure and division boundaries…');
+    onProgress('Verifying division boundaries…');
     const parsed = parseAlQuranCloudFullQuran(json, new Date().toISOString());
     try {
       const meta = parseAlQuranCloudMeta(await this.fetchJson(`${base}${ALQURAN_CLOUD.metaPath}`));
@@ -170,22 +127,14 @@ export class QuranDataService {
       if (e instanceof DataFormatError && e.message.startsWith('Per-ayah')) throw e;
       onProgress('Note: the /meta cross-check could not be performed; anchor verification still applies.');
     }
-    const sha = await sha256Hex(parsed.text.ayat.join('\n'));
-    const text: QuranTextDataset = { ...parsed.text, ...(sha ? { sha256: sha } : {}) };
-    const existingDivisions = this.current.divisions.quarterStarts ? this.current.divisions : parsed.divisions;
     if (this.current.divisions.quarterStarts) {
       const diffs = [
         ...diffStartLists(parsed.divisions.juzStarts, this.current.divisions.juzStarts),
         ...diffStartLists(parsed.divisions.quarterStarts ?? [], this.current.divisions.quarterStarts),
       ];
-      if (diffs.length) throw new DataFormatError(`Selected edition divisions disagree with the loaded dataset: ${diffs.slice(0, 3).join(', ')}`);
+      if (diffs.length) throw new DataFormatError(`Downloaded divisions disagree with the loaded dataset: ${diffs.slice(0, 3).join(', ')}`);
     }
-    const state = this.activate(text, existingDivisions, 'download');
-    await this.cache.set(textKey(edition), text);
-    await this.cache.set(KEY_ACTIVE_EDITION, edition);
-    await this.cache.set(KEY_DIVISIONS, existingDivisions);
-    onProgress('Quran data verified and saved for offline use.');
-    return state;
+    return this.activate(this.current.text?.dataset ?? null, parsed.divisions, 'download');
   }
 
   async importEighths(json: unknown): Promise<QuranDataState> {
@@ -208,11 +157,9 @@ export class QuranDataService {
     return state;
   }
 
+  /** Clears cached copies; the bundled text and divisions are loaded again. */
   async clearCache(): Promise<QuranDataState> {
     await this.cache.delete(KEY_TEXT);
-    await this.cache.delete(textKey(QURAN_TEXT_EDITIONS.uthmani));
-    await this.cache.delete(textKey(QURAN_TEXT_EDITIONS.simple));
-    await this.cache.delete(KEY_ACTIVE_EDITION);
     await this.cache.delete(KEY_DIVISIONS);
     this.current = anchorState();
     return this.current;

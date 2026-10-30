@@ -3,7 +3,7 @@ import { buildIcs, notificationsSupported, requestNotificationPermission } from 
 import { resolveAudioUrl, TemplateError, validateTemplate, type ReciterSource } from '../../core/audio/reciters.ts';
 import { removeDemoData, seedDemoData } from '../../core/demo.ts';
 import { ANCHOR_SOURCES } from '../../core/quran/anchors.ts';
-import { QURAN_TEXT_EDITIONS } from '../../core/data/alquranCloud.ts';
+
 import { REPEAT_LIMITS } from '../../core/playlist/sequence.ts';
 import type { Preferences } from '../../core/settings/preferences.ts';
 import { exportBackup, parseBackup, restoreBackup, wipePersonalData } from '../../core/storage/backup.ts';
@@ -39,9 +39,9 @@ function section(id: string, title: string, ...children: Parameters<typeof h>[2]
 
 /** Localizes the data service's progress messages (core reports them in English). */
 function progressText(m: string): string {
-  if (m.startsWith('Downloading Quran text')) return tr('set.progDownload');
+  if (m.startsWith('Downloading Quran division')) return tr('set.progDownload');
   if (m.startsWith('Main server unreachable')) return tr('set.progMirror');
-  if (m.startsWith('Verifying text structure')) return tr('set.progVerify');
+  if (m.startsWith('Verifying division')) return tr('set.progVerify');
   if (m.startsWith('Note: the /meta cross-check')) return tr('set.progMetaNote');
   if (m.startsWith('Quran data verified')) return tr('set.progDone');
   return m;
@@ -53,17 +53,14 @@ function quranDataSection(app: App): HTMLElement {
   const t = q.text?.dataset;
   const d = q.divisions;
   const fileInput = h('input', { type: 'file', accept: 'application/json,.json', 'aria-label': tr('set.eighthsFile') });
-  const textEdition = h('select', { 'aria-label': tr('set.textStyle'), 'data-key': 'quran-text-style' },
-    h('option', { value: QURAN_TEXT_EDITIONS.simple, selected: (t?.edition ?? QURAN_TEXT_EDITIONS.simple) === QURAN_TEXT_EDITIONS.simple }, tr('set.textSimple')),
-    h('option', { value: QURAN_TEXT_EDITIONS.uthmani, selected: t?.edition === QURAN_TEXT_EDITIONS.uthmani }, tr('set.textUthmani')),
-  );
   return section(
     'data',
     tr('set.data'),
     h(
       'dl',
       { class: 'kv' },
-      h('dt', null, tr('set.dText')), h('dd', null, t ? h('span', { dir: 'auto' }, `${t.label} (${t.edition})`) : tr('set.dNotDownloaded')),
+      h('dt', null, tr('set.textStyle')), h('dd', null, t ? h('span', { dir: 'auto' }, t.label) : tr('set.dNotDownloaded')),
+      h('dt', null, tr('set.font')), h('dd', null, tr('set.fontKfgqpc')),
       t ? [h('dt', null, tr('set.dSource')), h('dd', null, h('a', { href: t.source.url, rel: 'noopener', target: '_blank' }, t.source.name), h('br'), h('small', null, t.source.license))] : null,
       t?.source.retrievedAt ? [h('dt', null, tr('set.dDownloaded')), h('dd', null, formatDateTime(t.source.retrievedAt))] : null,
       t?.sha256 ? [h('dt', null, 'SHA-256'), h('dd', null, h('code', { dir: 'ltr', style: { 'word-break': 'break-all', 'font-size': '0.8rem' } }, t.sha256))] : null,
@@ -73,27 +70,24 @@ function quranDataSection(app: App): HTMLElement {
       d.eighthsSource ? [h('dt', null, tr('set.dEighths')), h('dd', { dir: 'auto' }, `${d.eighthsSource.name} (${d.eighthsSource.license})`)] : null,
     ),
     h('p', { class: 'muted' }, tr('set.dataHelp'), ANCHOR_SOURCES.map((s, i) => [i ? tr('common.listSep') : '', h('a', { href: s.url, rel: 'noopener', target: '_blank' }, s.label)]), '.'),
+    h('p', { class: 'muted' }, tr('set.textFixed')),
     h(
       'div',
       { class: 'row' },
-      h('label', { class: 'choice' }, h('span', null, tr('set.textStyle')), textEdition),
       h('button', {
-        type: 'button', class: t ? '' : 'primary', 'data-key': 'download-data',
+        type: 'button', class: d.quarterStarts ? '' : 'primary', 'data-key': 'download-data', disabled: !t,
         onclick: async (e: Event) => {
           const btn = e.currentTarget as HTMLButtonElement;
           btn.disabled = true;
-          textEdition.disabled = true;
-          const edition = textEdition.value as (typeof QURAN_TEXT_EDITIONS)[keyof typeof QURAN_TEXT_EDITIONS];
           const ok = await app.act(async () => {
-            app.quran = await app.s.quran.setEdition(edition, (m) => { status.textContent = progressText(m); });
+            app.quran = await app.s.quran.downloadDivisions((m) => { status.textContent = progressText(m); });
           }, tr('set.downloaded'));
           btn.disabled = false;
-          textEdition.disabled = false;
           if (!ok) status.textContent = tr('set.downloadFailed');
           else app.render(true);
         },
-      }, t ? tr('set.changeTextStyle') : tr('set.download')),
-      t || d.quarterStarts ? h('button', { type: 'button', class: 'quiet', onclick: async () => { if (await confirmDialog(tr('set.removeDataTitle'), tr('set.removeDataBody'), tr('common.remove'))) { app.quran = await app.s.quran.clearCache(); app.render(true); } } }, tr('set.removeData')) : null,
+      }, tr('set.updateDivisions')),
+      h('button', { type: 'button', class: 'quiet', onclick: async () => { if (await confirmDialog(tr('set.removeDataTitle'), tr('set.removeDataBody'), tr('common.remove'))) { app.quran = await app.s.quran.clearCache(); app.render(true); } } }, tr('set.removeData')),
     ),
     status,
     h('h3', { style: { 'margin-top': '1rem' } }, tr('set.eighths')),

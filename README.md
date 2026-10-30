@@ -16,7 +16,8 @@ No account, no tracking, and no AI service required. Your data stays on your dev
 * **Arabic and English interface** (Arabic by default, right-to-left; English left-to-right).
   Switch any time from the sidebar, the top bar on phones, or Settings; your choice is saved on
   the device. The Quran text is always shown exactly as supplied by the verified source.
-* **Quran reader** with Uthmani text, right-to-left, adjustable size, light and dark themes.
+* **Quran reader** with the KFGQPC Hafs V30 Uthmani text in its own KFGQPC Hafs font, right-to-left,
+  adjustable size, light and dark themes.
   Navigate by surah, ayah, juz, hizb, quarter, eighth (if imported) and page. A division panel
   shows the exact start and end of the portion, its quarters and eighths with their starting
   ayat, your reading position, and how many mistakes are marked, unresolved and resolved there.
@@ -61,17 +62,21 @@ Requirements: Node.js **22.18 or newer** (runs the TypeScript tests natively).
 
 ```bash
 npm install
+npm run data:import      # KFGQPC Hafs V30 DOCX -> public/data/quran-text.json (offline, no network)
+npm run data:fetch       # juz / hizb / quarter / page metadata, verified (needs internet)
 npm run build
 npm start                # http://127.0.0.1:5173
 ```
 
-Development with rebuild on change: `npm run dev`.
+With both datasets in `public/data/` the build ships them, so the app needs no download on first
+run. Without them, the reader lists ayat by reference and you can still mark ayat and listen, and
+*Settings → Quran text and divisions* offers to download the divisions (the KFGQPC text itself is
+always imported from the bundled release, never fetched from a server). Development with rebuild
+on change: `npm run dev`.
 
-**First run:** open *Settings → Quran text and divisions → Download Quran data* (about 2.5 MB,
-once). The download is verified (counts, order, cross-check with `/meta`, and the bundled
-verified juz/hizb anchors) and stored for offline use. Alternatively, run `npm run data:fetch`
-before building to ship the verified data with the app (`public/data/`). Without the data,
-the reader lists ayat by reference and you can still mark ayat and listen.
+The Quran text and font come from the official KFGQPC release kept in
+[`public/KFGQPC-Hafs-V30/`](public/KFGQPC-Hafs-V30/README.txt); see
+[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) for provenance and licences.
 
 To look around before using it for real: *Settings → Privacy, backup and data → Load demo data*.
 

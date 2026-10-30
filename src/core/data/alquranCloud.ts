@@ -5,9 +5,10 @@ import { applyTanzilTextEncodingUpdates, type QuranTextDataset } from '../quran/
 
 /**
  * AlQuran.cloud (https://alquran.cloud/api) — free, no authentication, CORS-enabled.
- * The `quran-uthmani` edition is derived from Tanzil's Uthmani text (CC BY 3.0, verbatim).
- * Every ayah in the full-Quran response carries juz / page / hizbQuarter numbers, from which
- * division boundaries are derived (never by arithmetic).
+ * Used ONLY as the source of the juz / hizb-quarter / page metadata (Tanzil metadata, Madani
+ * mushaf): every ayah in the full-Quran response carries those numbers, from which the division
+ * boundaries are derived (never by arithmetic). Its ayah text is validated for structure but not
+ * displayed — the app's Quran text is the KFGQPC Hafs V30 dataset (see scripts/import-kfgqpc.ts).
  */
 export const ALQURAN_CLOUD = {
   baseUrl: 'https://api.alquran.cloud/v1',
@@ -16,15 +17,10 @@ export const ALQURAN_CLOUD = {
   fullQuranPath: (edition: string) => `/quran/${encodeURIComponent(edition)}`,
   metaPath: '/meta',
   defaultEdition: 'quran-simple',
-  license: 'Text: Tanzil Quran Text (CC BY 3.0, verbatim copies only, attribution to tanzil.net required).',
+  license: 'Division metadata: Tanzil Quran metadata (CC BY 3.0), via AlQuran.cloud. Attribution to tanzil.net required.',
 } as const;
 
-/** Tanzil text styles in the Hafs narration, both with the standard 6236 ayat. */
-export const QURAN_TEXT_EDITIONS = {
-  uthmani: 'quran-uthmani',
-  simple: 'quran-simple',
-} as const;
-export type QuranTextEdition = (typeof QURAN_TEXT_EDITIONS)[keyof typeof QURAN_TEXT_EDITIONS];
+
 
 const AyahSchema = z.object({
   number: z.number().int(),
@@ -120,7 +116,7 @@ export function parseAlQuranCloudFullQuran(json: unknown, retrievedAt: string): 
   if (ayat.length !== TOTAL_AYAT) throw new DataFormatError(`Source has ${ayat.length} ayat; expected ${TOTAL_AYAT}`);
 
   const source = {
-    name: `AlQuran.cloud (${edition.identifier}, text by Tanzil.net)`,
+    name: `AlQuran.cloud division metadata (${edition.identifier}, Tanzil.net)`,
     url: `${ALQURAN_CLOUD.baseUrl}${ALQURAN_CLOUD.fullQuranPath(edition.identifier)}`,
     license: ALQURAN_CLOUD.license,
     retrievedAt,
@@ -135,7 +131,7 @@ export function parseAlQuranCloudFullQuran(json: unknown, retrievedAt: string): 
     },
     divisions: {
       schema: 'hafeez-divisions/1',
-      id: `alquran-cloud:${edition.identifier}`,
+      id: `alquran-cloud:${edition.identifier}:divisions`,
       label: 'Madani mushaf divisions (Tanzil metadata via AlQuran.cloud)',
       numbering: 'hafs-kufan',
       source,

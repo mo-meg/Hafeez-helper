@@ -5,22 +5,29 @@ division boundaries come from published datasets and are verified before use.
 
 ## Quran text
 
+There is exactly **one** text edition — the app has no text-style switch and never downloads a
+second text at runtime, so a word position saved with a mistake always points at the same word.
+
 | Item | Source | Licence | How it reaches the app |
 |---|---|---|---|
-| Uthmani text (`quran-uthmani`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-uthmani` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): attribution to Tanzil required | Downloaded from Settings and cached for offline use |
-| Simple text (`quran-simple`) | [Tanzil.net](https://tanzil.net) via [AlQuran.cloud](https://alquran.cloud/api) `GET /v1/quran/quran-simple` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/): attribution to Tanzil required | Downloaded automatically on first launch and cached for offline use; can also be bundled with `npm run data:fetch` |
+| Quran text (`kfgqpc-hafs-v30`) | King Fahd Glorious Quran Printing Complex, Madinah — the published *KFGQPC Hafs V30* DOCX in `public/KFGQPC-Hafs-V30/` | KFGQPC release; reproduced unmodified, not sold (see `public/KFGQPC-Hafs-V30/README.txt`) | `npm run data:import` writes `public/data/quran-text.json`; the app loads it (bundled, then cached offline) |
+| Quran font | the matching *KFGQPC Hafs V30* TTF in `public/KFGQPC-Hafs-V30/` | Electronic end-user licence embedded in the font: free to use, copy and distribute; may not be sold, modified or decompiled ([full text](../public/fonts/LICENSE-KFGQPC-Hafs.txt)) | The build copies it to `/fonts/KFGQPC-Hafs-V30.ttf`; `public/fonts/fonts.css` declares it and it is the only Quran font |
 
 Handling rules:
 
-* Both styles use Hafs narration and the same ayah numbering. Text follows Tanzil's
-  published text-encoding updates (including tatweel + U+06E7 for
-  medial U+06E6 small yeh); word-final U+06E6 is retained. Other text remains verbatim
-  (diacritics, Uthmani orthography, pause marks). Normalization
-  (`skeleton()` in `src/core/quran/tokenize.ts`) is used **only for comparisons**, never for display.
-* AlQuran.cloud prepends the basmala to the first ayah of each surah (except 1 and 9). The app
-  detects it by comparing with the dataset's **own** text of 1:1 and shows it as a header, so
-  word positions in ayah 1 start at the first word of the ayah itself.
-* A SHA-256 of the text is recorded at download time and shown in Settings.
+* The text is Hafs 'an 'Asim, Kufan count (6236 ayat), Uthmani orthography. It is the DOCX's own
+  characters: surah titles separate the surahs, each ayah is followed by its marker `۝N`, and
+  the basmala stands on its own line for every surah except Al-Fatihah (where it *is* 1:1) and
+  At-Tawbah. Line breaks inside the document switch the bidirectional direction or wrap a word;
+  they are **not** word boundaries and are dropped, never turned into spaces.
+* The import refuses to write anything unless it finds 114 surah titles, the verified per-surah
+  ayah counts (6236 in total), 1..n numbering inside every surah, and every juz / quarter / page
+  start of `divisions.json` inside the text. Normalization (`skeleton()` in
+  `src/core/quran/tokenize.ts`) is used **only for comparisons**, never for display.
+* This edition encodes sukun as U+06E1 (not U+06D2-style tatweel + U+06E7 as Tanzil does) and
+  attaches the sajda sign U+06E9 to the word it marks; `tests/data/realdata.datatest.ts` pins
+  both. A SHA-256 of the text is recorded by the import and shown in Settings.
+* UI strings are never Quran text: the app displays only what the dataset contains.
 * Word references are `(edition, surah, ayah, position)` where position counts whitespace-separated
   tokens that contain at least one Arabic letter (pause marks such as ۖ ۗ ۚ and ۩ are kept
   but are not words). A verbatim snapshot of the token is stored with each word mistake; if
@@ -29,9 +36,10 @@ Handling rules:
 
 ## Division metadata (juz, hizb, quarter, page)
 
-Derived from the per-ayah `juz`, `hizbQuarter` and `page` fields of the same AlQuran.cloud
-response (Tanzil metadata, Madani mushaf). A boundary is the first ayah where the number
-changes. Nothing is computed by dividing ayah or page counts. A hizb is by definition four
+Division boundaries are the only thing AlQuran.cloud is used for now. They are derived from the
+per-ayah `juz`, `hizbQuarter` and `page` fields of its `quran-simple` response (Tanzil metadata,
+Madani mushaf) — the ayah text in that response is validated for structure but never displayed.
+A boundary is the first ayah where the number changes. Nothing is computed by dividing ayah or page counts. A hizb is by definition four
 quarters, so hizb *n* starts where quarter 4n−3 starts.
 
 Before any dataset is used, `validateDivisionDataset()` checks:
@@ -47,7 +55,9 @@ Before any dataset is used, `validateDivisionDataset()` checks:
    [`quran-data.js`](https://tanzil.net/res/text/metadata/quran-data.js) (CC BY 3.0). Any disagreement means nothing is saved.
 
 Surah ayah counts (Hafs/Kufan, 6236 in total) are bundled in `src/core/quran/surahs.ts`
-and every downloaded dataset is checked against them.
+and every dataset — the downloaded divisions and the imported KFGQPC text — is checked against
+them. Settings offers "Download the divisions again", which re-fetches and re-verifies them,
+including agreement with the loaded text's structure.
 
 ### Eighths (thumn)
 

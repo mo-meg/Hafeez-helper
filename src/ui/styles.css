@@ -3,7 +3,7 @@
    muted gilt reserved for Quran structure (ayah markers, surah bands, division markers),
    red for marked mistakes only, leaf green for resolved marks.
    All layout uses logical properties so the same CSS serves Arabic (RTL) and English (LTR). */
-/* The Quran font is the bundled Amiri Quran, declared in /fonts/fonts.css, linked from index.html. */
+/* The Quran font is the bundled KFGQPC Hafs V30, declared in /fonts/fonts.css, linked from index.html. */
 :root {
   --paper: #f6f2e8;
   --surface: #fffdf8;
@@ -23,7 +23,7 @@
   --amber: #805600;
   --amber-soft: #f6ebd0;
   --focus: #1f5640;
-  --quran-font: 'AmiriQuran', 'Noto Naskh Arabic', serif;
+  --quran-font: 'KFGQPCHafs', 'Noto Naskh Arabic', serif;
   --ui-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
   --ui-font-ar: 'Noto Sans Arabic', 'IBM Plex Sans Arabic', 'Segoe UI', 'SF Arabic', 'Geeza Pro', Tahoma, system-ui, sans-serif;
   --quran-scale: 1.2;

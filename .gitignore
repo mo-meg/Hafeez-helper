@@ -5,7 +5,8 @@ dist-harness/
 .env
 .env.*
 !.env.example
-# Downloaded Quran datasets are reproducible via `npm run data:fetch`; commit them only
-# after reviewing the source licence (Tanzil text is CC BY 3.0 and must be kept verbatim).
+# Generated Quran data: `npm run data:fetch` (divisions, Tanzil CC BY 3.0) and `npm run data:import`
+# (text, from the KFGQPC release in public/KFGQPC-Hafs-V30/). Reproducible; commit only after
+# reviewing the licences in docs/DATA_SOURCES.md.
 public/data/*.json
 !public/data/README.md
