@@ -22,9 +22,9 @@ const cloudDefine = {
 };
 const harness = args.has('--harness');
 
-const SHOWCASES = { '': 'harness', dashboard: '#/dashboard', quran: '#/quran?hizb=5', revision: '#/revision', mistakes: '#/mistakes', test: 'live-test', progress: '#/progress', settings: '#/settings', session: 'live-session', login: 'login-screen' };
+const SHOWCASES = { '': 'harness', dashboard: '#/dashboard', quran: '#/quran?hizb=5', revision: '#/revision', mistakes: '#/mistakes', test: 'live-test', progress: '#/progress', settings: '#/settings', session: 'live-session', login: 'login-screen', autoscroll: 'auto-scroll' };
 /** Arabic (RTL) variants of the showcase screens. */
-const AR_SHOWCASES = ['dashboard', 'quran', 'revision', 'mistakes', 'test', 'progress', 'settings', 'session', 'login'];
+const AR_SHOWCASES = ['dashboard', 'quran', 'revision', 'mistakes', 'test', 'progress', 'settings', 'session', 'login', 'autoscroll'];
 
 async function buildHarness() {
   const out = join(root, 'dist-harness');

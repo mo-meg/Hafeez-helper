@@ -1,15 +1,18 @@
-import { isUnresolved, type Mistake } from '../../core/model.ts';
+import { isUnresolved, suggestedCategory, type Mistake } from '../../core/model.ts';
 import { DivisionUnavailableError } from '../../core/quran/divisions.ts';
+import { nextPortion, portionQuery, type NextPortion } from '../../core/reading/autoScroll.ts';
 import { fromIndex, surahEndIndex, surahStartIndex, toIndex } from '../../core/quran/refs.ts';
 import { SURAHS, surahInfo } from '../../core/quran/surahs.ts';
 import type { AyahRef, DivisionKind, DivisionRange } from '../../core/quran/types.ts';
 import { DEFAULT_PREFERENCES } from '../../core/settings/preferences.ts';
 import type { App } from '../app.ts';
+import { AutoScrollSession, type PortionInfo } from '../components/autoScroll.ts';
 import { openDialog } from '../components/dialog.ts';
+import { icon } from '../components/icons.ts';
 import { openMarkDialog, statusChip } from '../components/markDialog.ts';
 import { arabicDigits, h, type Child } from '../dom.ts';
 import { dir, fmtNum, t, tn } from '../i18n/index.ts';
-import { divisionLabel, errorText, kindName, refLabel, surahName, surahOption } from '../i18n/labels.ts';
+import { categoryLabel, divisionLabel, errorText, kindName, refLabel, surahName, surahOption } from '../i18n/labels.ts';
 
 const KINDS: DivisionKind[] = ['juz', 'hizb', 'quarter', 'eighth', 'page'];
 
@@ -224,6 +227,11 @@ function textBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMap
   container.addEventListener('click', (e) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!el) return;
+    if (app.autoScroll?.active) {
+      // Focus mode: a tap on a word records a mistake at once; ayah numbers are inert.
+      if (el.classList.contains('w')) void quickMark(app, el);
+      return;
+    }
     if (el.classList.contains('w')) {
       const idx = Number(el.dataset.a);
       const pos = Number(el.dataset.p);
@@ -236,6 +244,57 @@ function textBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMap
     }
   });
   return container;
+}
+
+/**
+ * Auto-scroll mode: marks the tapped word without opening the dialog. The type follows the same
+ * rule as the dialog's suggestion: first word of an ayah = linking ayat, otherwise forgotten word.
+ * The word is updated in place (no re-render) so scrolling stays smooth; Undo is offered.
+ */
+async function quickMark(app: App, el: HTMLElement): Promise<void> {
+  const idx = Number(el.dataset.a);
+  const position = Number(el.dataset.p);
+  const ref = fromIndex(idx);
+  const where = t('mark.where', { ref: refLabel(ref), n: position });
+  const edition = app.quran.text?.edition;
+  if (!edition) {
+    app.toast(t('error.wordNeedsText'), 'error');
+    return;
+  }
+  await app.act(async () => {
+    const existing = await app.s.mistakes.findByKey(ref, position);
+    if (existing && isUnresolved(existing.status)) {
+      app.toast(t('auto.alreadyMarked', { where }));
+      return;
+    }
+    const category = existing?.category ?? suggestedCategory(position) ?? 'forgotten';
+    const result = await app.s.mistakes.markWord(ref, { position, tokenText: el.textContent ?? '', edition }, { category });
+    const paint = (state: 'marked' | 'resolved' | 'none') => {
+      el.classList.toggle('marked', state !== 'none');
+      el.classList.toggle('resolved', state === 'resolved');
+      if (state === 'none') el.removeAttribute('aria-describedby');
+      else el.setAttribute('aria-describedby', 'marked-desc');
+    };
+    paint('marked');
+    el.classList.remove('just-marked');
+    void el.offsetWidth; // restart the confirmation pulse
+    el.classList.add('just-marked');
+    await app.reloadData();
+    app.toast(t('auto.marked', { cat: categoryLabel(category), where }), 'info', {
+      label: t('auto.undo'),
+      key: 'as-undo',
+      run: () => void app.act(async () => {
+        if (result.action === 'created') {
+          await app.s.mistakes.deletePermanently(result.mistake.id);
+          paint('none');
+        } else {
+          await app.s.mistakes.resolve(result.mistake.id);
+          paint('resolved');
+        }
+        await app.reloadData();
+      }, t('auto.undone')),
+    });
+  });
 }
 
 function refOnlyBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMaps>): HTMLElement {
@@ -355,12 +414,39 @@ function legend(): HTMLElement {
   );
 }
 
+function portionName(range: ViewRange): string {
+  return range.division ? divisionLabel(range.division.kind, range.division.number) : t('scope.surah', { name: surahName(range.surah ?? 1) });
+}
+
+function nextName(p: NextPortion): string {
+  return p.kind === 'surah' ? t('scope.surah', { name: surahName(p.number) }) : divisionLabel(p.kind, p.number);
+}
+
+function portionInfo(app: App, range: ViewRange): PortionInfo {
+  const n = nextPortion(range, (k) => app.quran.index.count(k));
+  return { label: portionName(range), next: n ? { hash: `#/quran?${portionQuery(n)}`, label: nextName(n) } : null };
+}
+
+/** Floating button that starts auto-scroll focus mode from the current position. */
+function autoScrollButton(app: App, range: ViewRange): HTMLElement {
+  return h(
+    'button',
+    {
+      type: 'button', class: 'autoscroll-fab', 'data-key': 'autoscroll-start',
+      'aria-label': t('auto.start'), title: t('auto.start'),
+      onclick: () => AutoScrollSession.start(app, portionInfo(app, range)),
+    },
+    icon('autoScroll'),
+  );
+}
+
 export function quranView(app: App): Node {
   const { range, problem } = resolveRange(app);
   const maps = mistakeMaps(app.data.mistakes);
   const hasText = !!app.quran.text;
   const body = hasText ? textBody(app, range, maps) : refOnlyBody(app, range, maps);
   const mushaf = h('article', { class: 'mushaf', 'aria-label': t('quran.textLabel') }, body);
+  app.autoScroll?.setPortion(portionInfo(app, range));
 
   // Scroll to a requested ayah and track the reading position while scrolling.
   const focus = Number(app.route.params.get('focus') ?? NaN);
@@ -395,5 +481,6 @@ export function quranView(app: App): Node {
       : null,
     navigator(app, range),
     h('div', { class: 'reader-layout' }, h('div', null, stepLinks(app, range), legend(), mushaf), divisionPanel(app, range)),
+    hasText ? autoScrollButton(app, range) : null,
   );
 }

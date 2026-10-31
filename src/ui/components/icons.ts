@@ -15,6 +15,11 @@ const PATHS: Record<string, string[]> = {
   prev: ['M19 4L9 12l10 8z', 'M5 4v16'],
   restart: ['M4 12a8 8 0 1 0 2.5-5.8', 'M4 4v4h4'],
   stop: ['M6 6h12v12H6z'],
+  rewind: ['M11 6l-7 6 7 6z', 'M20 6l-7 6 7 6z'],
+  minus: ['M5 12h14'],
+  plus: ['M12 5v14', 'M5 12h14'],
+  close: ['M6 6l12 12', 'M18 6L6 18'],
+  autoScroll: ['M7 5l5 5 5-5', 'M7 12l5 5 5-5', 'M5 21h14'],
   flagNext: ['M4 21V4h9l-1.5 3.5L13 11H4', 'M16 8l4 4-4 4'],
 };
 

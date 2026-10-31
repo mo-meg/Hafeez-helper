@@ -386,6 +386,91 @@ async function run() {
     check(res.summary.mistakes === 6 && res.summary.reviews >= 6, `restored ${JSON.stringify(res.summary)}`);
   });
 
+  await step('Auto scroll: full-screen focus bar, speed, quick marks with undo, next portion', async () => {
+    await go('#/quran?hizb=5');
+    const before = (await store.mistakes.getAll()).length;
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'floating auto-scroll button')).click();
+    const bar = await waitFor(() => $('.autoscroll-bar'), 'auto-scroll bar');
+    check(document.body.classList.contains('focus-reading'), 'focus mode on');
+    check(getComputedStyle($('.division-panel') as HTMLElement).display === 'none', 'side panel hidden');
+    check(getComputedStyle($('.navigator') as HTMLElement).display === 'none', 'navigator hidden');
+    const status = $('.as-status', bar) as HTMLElement;
+    check(/^\d+ minutes? \| \d+$/.test(status.textContent ?? ''), `status "${status.textContent}"`);
+    const app0 = app.autoScroll;
+    check(app0?.active, 'session registered on the app');
+    app0?.pause();
+    const speed = app0?.speed ?? 0;
+    $<HTMLButtonElement>('[data-key="as-faster"]', bar)?.click();
+    check(app0?.speed === speed + 1 && status.dataset.speed === String(speed + 1), 'faster');
+    $<HTMLButtonElement>('[data-key="as-slower"]', bar)?.click();
+    $<HTMLButtonElement>('[data-key="as-slower"]', bar)?.click();
+    check(app0?.speed === speed - 1, 'slower');
+    app0?.setSpeed(99);
+    check(app0?.speed === 30 && $<HTMLButtonElement>('[data-key="as-faster"]', bar)?.disabled, 'capped at 30');
+    app0?.setSpeed(speed);
+    const toggle = $<HTMLButtonElement>('[data-key="as-toggle"]', bar) as HTMLButtonElement;
+    check(toggle.getAttribute('aria-label') === 'Resume auto scroll', 'paused label');
+    toggle.click();
+    check(!app0?.paused && toggle.getAttribute('aria-label') === 'Pause auto scroll', 'resumed');
+    app0?.pause();
+
+    // Tap a word (not the first of its ayah): marked "Forgotten word" at once, no dialog.
+    const w = await waitFor(() => $$<HTMLButtonElement>('.quran button.w:not(.marked)').find((b) => b.dataset.p !== '1'), 'unmarked word');
+    w.click();
+    await waitFor(() => w.classList.contains('marked'), 'word painted as marked');
+    check(!dialog(), 'no mark dialog in focus mode');
+    let ms = await store.mistakes.getAll();
+    const made = ms.find((m) => m.globalIndex === Number(w.dataset.a) && m.word?.position === Number(w.dataset.p));
+    check(ms.length === before + 1 && made?.category === 'forgotten', `quick mark saved as ${made?.category}`);
+    check(/Marked “Forgotten word”/.test($('.toast-region')?.textContent ?? ''), 'confirmation toast');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="as-undo"]'), 'undo button')).click();
+    await waitFor(() => !w.classList.contains('marked'), 'undo unpaints the word');
+    check((await store.mistakes.getAll()).length === before, 'undo deleted the record');
+
+    // First word of an ayah: "Linking ayat (transition)".
+    const first = await waitFor(() => $$<HTMLButtonElement>('.quran button.w[data-p="1"]:not(.marked)')[0], 'unmarked first word');
+    first.click();
+    await waitFor(() => first.classList.contains('marked'), 'first word marked');
+    ms = await store.mistakes.getAll();
+    check(ms.find((m) => m.globalIndex === Number(first.dataset.a) && m.word?.position === 1)?.category === 'ayah_transition', 'saved as linking ayat');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="as-undo"]'), 'undo button 2')).click();
+    await waitFor(() => !first.classList.contains('marked'), 'second undo');
+    await sleep(50);
+
+    // An already-marked word is not counted twice.
+    const marked = await waitFor(() => $<HTMLButtonElement>('.quran button.w.marked:not(.resolved)'), 'already marked word');
+    marked.click();
+    await waitFor(() => /Already marked/.test($('.toast-region')?.textContent ?? ''), 'already-marked toast');
+    check((await store.mistakes.getAll()).length === before, `count unchanged (${(await store.mistakes.getAll()).length} vs ${before})`);
+    // Ayah numbers do not open the options dialog in focus mode.
+    $<HTMLButtonElement>('.quran .ayah-end')?.click();
+    await sleep(30);
+    check(!dialog(), 'ayah number inert');
+
+    // End of the portion: asks, then continues into the next hizb and keeps scrolling.
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    await sleep(30);
+    app0?.resume();
+    const endDlg = await waitFor(dialog, 'end-of-portion question');
+    check(/end of Hizb 5/.test(endDlg.textContent ?? '') && /Hizb 6/.test(endDlg.textContent ?? ''), 'asks to continue into Hizb 6');
+    $<HTMLButtonElement>('[data-key="as-continue"]', endDlg)?.click();
+    await waitFor(() => app.route.params.get('hizb') === '6', 'navigated to Hizb 6');
+    check(app.autoScroll === app0 && $('.autoscroll-bar'), 'focus mode kept across portions');
+    await waitFor(() => app0 && !app0.paused, 'scrolling resumed', 4000);
+
+    // Esc exits; leaving the Quran section also exits.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    check(!$('.autoscroll-bar') && !document.body.classList.contains('focus-reading') && app.autoScroll === null, 'Esc exits focus mode');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'button back')).click();
+    await waitFor(() => $('.autoscroll-bar'), 'bar again');
+    $<HTMLButtonElement>('[data-key="as-close"]')?.click();
+    check(!$('.autoscroll-bar') && app.autoScroll === null, 'X exits focus mode');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'button again')).click();
+    await go('#/dashboard');
+    check(!$('.autoscroll-bar') && !document.body.classList.contains('focus-reading'), 'leaving the Quran exits focus mode');
+    document.querySelector('.toast-region')?.replaceChildren();
+  });
+
   await step('Every button and link has an accessible name on each page', async () => {
     for (const r of ['#/dashboard', '#/quran?hizb=5', '#/revision', '#/mistakes', '#/test', '#/progress', '#/settings']) {
       await go(r);
@@ -581,6 +666,12 @@ async function run() {
     }
     $<HTMLButtonElement>('[data-key="test-reveal"]')?.click();
     await sleep(30);
+    window.scrollTo(0, 0);
+  } else if (showcase === 'auto-scroll') {
+    await go('#/quran?hizb=5');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'auto-scroll button')).click();
+    app.autoScroll?.pause();
+    app.autoScroll?.setSpeed(15);
     window.scrollTo(0, 0);
   } else if (showcase) await go(showcase);
   else await go('#/dashboard');

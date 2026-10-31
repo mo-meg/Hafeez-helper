@@ -13,6 +13,7 @@ import type { Preferences } from '../core/settings/preferences.ts';
 import { localDateKey } from '../core/util/ids.ts';
 import { dir, getLocale, setLocale, t, type Locale, type MessageKey } from './i18n/index.ts';
 import { errorText, refLabel, scopeLabel } from './i18n/labels.ts';
+import type { AutoScrollSession } from './components/autoScroll.ts';
 import { icon } from './components/icons.ts';
 import { languageSwitch as languageSwitchControl } from './components/languageSwitch.ts';
 import { syncStatusText, type AccountController } from './auth/account.ts';
@@ -86,6 +87,8 @@ export class App {
   active: ActiveSession | null = null;
   test: ActiveTest | null = null;
   readingPosition: AyahRef | null = null;
+  /** Quran auto-scroll focus mode, while it is on. */
+  autoScroll: AutoScrollSession | null = null;
   private main!: HTMLElement;
   private dock!: HTMLElement;
   private toastRegion!: HTMLElement;
@@ -235,6 +238,7 @@ export class App {
     const [path = '', query = ''] = raw.split('?');
     const name = (NAV.some((n) => n.name === path) || path === 'session' ? path : 'dashboard') as RouteName;
     this.route = { name, params: new URLSearchParams(query) };
+    if (name !== 'quran') this.autoScroll?.stop();
     this.render(false);
   }
 
@@ -295,10 +299,15 @@ export class App {
   }
 
   // ---------------------------------------------------------------- helpers
-  toast(message: string, kind: 'info' | 'error' = 'info'): void {
-    const t = h('div', { class: `toast${kind === 'error' ? ' error' : ''}`, role: kind === 'error' ? 'alert' : 'status' }, message);
+  toast(message: string, kind: 'info' | 'error' = 'info', action?: { readonly label: string; readonly key?: string; readonly run: () => void }): void {
+    const t = h(
+      'div',
+      { class: `toast${kind === 'error' ? ' error' : ''}${action ? ' has-action' : ''}`, role: kind === 'error' ? 'alert' : 'status' },
+      h('span', null, message),
+      action ? h('button', { type: 'button', class: 'toast-action', 'data-key': action.key ?? null, onclick: () => { t.remove(); action.run(); } }, action.label) : null,
+    );
     this.toastRegion.append(t);
-    setTimeout(() => t.remove(), kind === 'error' ? 8000 : 3500);
+    setTimeout(() => t.remove(), kind === 'error' ? 8000 : action ? 6000 : 3500);
   }
 
   /** Runs a user action, reporting failures clearly. */
