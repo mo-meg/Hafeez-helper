@@ -41,6 +41,8 @@ export const PreferencesSchema = z.object({
   pauseForAssessment: z.boolean(),
   theme: z.enum(['system', 'light', 'dark']),
   fontScale: z.number().min(0.8).max(2.5),
+  /** Hafeez mode: brightness (percent, 0 to 7) of the hidden lower half. 0 = fully invisible. */
+  hafeezGhost: z.number().int().min(0).max(7),
   reminder: z.object({ enabled: z.boolean(), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) }),
   /** Interface language. Arabic is the default; Quran text is never affected by it. */
   language: z.enum(['ar', 'en']),
@@ -72,6 +74,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   pauseForAssessment: true,
   theme: 'system',
   fontScale: 1.2,
+  hafeezGhost: 7,
   reminder: { enabled: false, time: '07:00' },
   language: 'ar',
 };

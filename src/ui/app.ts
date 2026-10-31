@@ -355,6 +355,7 @@ export class App {
     const dark = this.prefs.theme === 'dark' || (this.prefs.theme === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     document.documentElement.style.setProperty('--quran-scale', String(this.prefs.fontScale));
+    document.documentElement.style.setProperty('--hafeez-ghost', `${this.prefs.hafeezGhost}%`);
     setLocale(this.prefs.language);
     document.documentElement.lang = this.prefs.language;
     document.documentElement.dir = dir(this.prefs.language);

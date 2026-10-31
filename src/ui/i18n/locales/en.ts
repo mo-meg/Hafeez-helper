@@ -693,6 +693,8 @@ export const en = {
   'set.themeDark': 'Dark',
   'set.fontSize': 'Arabic text size ({pct})',
   'set.fontPreview': 'Font size preview',
+  'set.ghost': 'Hafeez mode: brightness of the hidden half ({pct})',
+  'set.ghostHelp': 'In Hafeez mode the lower half of the screen shows faint words. Lower this to make them harder to see; 0% hides them completely (ayah numbers stay visible).',
   'set.fontHelp': 'Quran text renders with the KFGQPC Hafs V30 font bundled with the app — the font the text was published with — so it looks the same on every device and works offline.',
   'set.reminderSaved': 'Reminder time saved.',
   'set.reminders': 'Daily reminder',

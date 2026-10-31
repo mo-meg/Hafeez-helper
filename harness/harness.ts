@@ -585,6 +585,27 @@ async function run() {
     document.querySelector('.toast-region')?.replaceChildren();
   });
 
+  await step('Settings: Hafeez hidden-half brightness 7% to 0%', async () => {
+    await go('#/settings');
+    const slider = await waitFor(() => $<HTMLInputElement>('[data-key="hafeez-ghost"]'), 'ghost slider');
+    check(slider.min === '0' && slider.max === '7' && slider.value === '7', 'range 0..7, default 7');
+    check(document.documentElement.style.getPropertyValue('--hafeez-ghost') === '7%', 'default css value');
+    setInput(slider, '0');
+    await waitFor(() => app.prefs.hafeezGhost === 0, 'saved');
+    check(document.documentElement.style.getPropertyValue('--hafeez-ghost') === '0%', 'css follows setting');
+    await go('#/quran?hizb=5');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'start')).click();
+    const session = await waitFor(() => app.autoScroll, 'session');
+    session.pause();
+    session.setHafeez('half', false);
+    await sleep(80);
+    const hidden = await waitFor(() => $<HTMLElement>('.quran .w.hz-h:not(.marked)'), 'hidden word');
+    check(/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)/.test(getComputedStyle(hidden).color) || getComputedStyle(hidden).color.includes(' 0)') || getComputedStyle(hidden).color.includes('/ 0)'), `fully invisible at 0% (${getComputedStyle(hidden).color})`);
+    session.setHafeez('off', false);
+    session.stop();
+    await app.savePrefs({ ...app.prefs, hafeezGhost: 7 });
+  });
+
   await step('Every button and link has an accessible name on each page', async () => {
     for (const r of ['#/dashboard', '#/quran?hizb=5', '#/revision', '#/mistakes', '#/test', '#/progress', '#/settings']) {
       await go(r);

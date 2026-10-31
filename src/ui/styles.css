@@ -447,7 +447,7 @@ body.focus-reading .toast-region { top: max(1rem, env(safe-area-inset-top)); }
 body.hafeez-hide:not(.hafeez-hint) .quran .w.hz-h,
 body.hafeez-hint .quran .w.hz-h:not([data-p='1']),
 body.hafeez-hide .quran .pause-mark.hz-h {
-  color: color-mix(in srgb, var(--ink) 7%, transparent); background: none;
+  color: color-mix(in srgb, var(--ink) var(--hafeez-ghost, 7%), transparent); background: none;
   text-decoration-color: transparent; pointer-events: none;
 }
 .hafeez-line {

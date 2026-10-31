@@ -214,6 +214,20 @@ function appearanceSection(app: App): HTMLElement {
     h('label', { class: 'field', style: { 'margin-top': '0.75rem' } }, h('span', null, t('set.fontSize', { pct: fmtNum(p.fontScale, { style: 'percent' }) })), h('input', { type: 'range', min: '0.8', max: '2.5', step: '0.1', value: String(p.fontScale), 'data-key': 'font-scale', oninput: (e: Event) => document.documentElement.style.setProperty('--quran-scale', (e.target as HTMLInputElement).value), onchange: (e: Event) => void app.savePrefs({ ...p, fontScale: Number((e.target as HTMLInputElement).value) }).then(() => app.render(true)) })),
     preview,
     h('p', { class: 'muted' }, t('set.fontHelp')),
+    (() => {
+      const ghostSample = h('p', { class: 'quran', lang: 'ar', dir: 'rtl', style: { 'text-align': 'center', 'max-width': 'none', color: `color-mix(in srgb, var(--ink) ${p.hafeezGhost}%, transparent)` } }, sample);
+      const label = h('span', null, t('set.ghost', { pct: fmtNum(p.hafeezGhost / 100, { style: 'percent' }) }));
+      const slider = h('input', {
+        type: 'range', min: '0', max: '7', step: '1', value: String(p.hafeezGhost), 'data-key': 'hafeez-ghost',
+        oninput: () => {
+          const v = Number(slider.value);
+          ghostSample.style.color = `color-mix(in srgb, var(--ink) ${v}%, transparent)`;
+          label.textContent = t('set.ghost', { pct: fmtNum(v / 100, { style: 'percent' }) });
+        },
+        onchange: () => void app.savePrefs({ ...p, hafeezGhost: Number(slider.value) }),
+      });
+      return h('div', { style: { 'margin-top': '1rem' } }, h('label', { class: 'field' }, label, slider), ghostSample, h('p', { class: 'muted' }, t('set.ghostHelp')));
+    })(),
   );
 }
 
