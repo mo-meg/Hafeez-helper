@@ -417,9 +417,11 @@ body.focus-reading .skip-link, body.focus-reading .autoscroll-fab, body.focus-re
 body.focus-reading main .navigator, body.focus-reading main .notice, body.focus-reading main .step-links,
 body.focus-reading main .legend, body.focus-reading main .division-panel { display: none; }
 body.focus-reading .shell { grid-template-columns: 1fr; }
-body.focus-reading main { max-width: none; padding: 0.75rem 0.75rem calc(5rem + env(safe-area-inset-bottom)); }
+/* Only vertical spacing changes here: the text keeps its exact width, so the lines are not
+   re-wrapped when focus mode starts (re-wrapping a whole juz is what made the start stutter). */
+body.focus-reading main { padding-top: 0.75rem; padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
 body.focus-reading .reader-layout { display: block; }
-body.focus-reading .mushaf { max-width: 52rem; border: 0; box-shadow: none; border-radius: 0; padding-inline: clamp(0.5rem, 3vw, 2rem); }
+body.focus-reading .mushaf { border-color: transparent; box-shadow: none; }
 body.focus-reading .ayah.current { background: none; }
 body.focus-reading .toast-region { top: max(1rem, env(safe-area-inset-top)); }
 .w.just-marked { animation: just-marked 0.7s ease-out; }

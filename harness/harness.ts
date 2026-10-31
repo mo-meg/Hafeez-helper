@@ -398,7 +398,21 @@ async function run() {
     check(/^\d+ minutes? \| \d+$/.test(status.textContent ?? ''), `status "${status.textContent}"`);
     const app0 = app.autoScroll;
     check(app0?.active, 'session registered on the app');
+    // The text keeps its width (no re-wrap) and the reading place is kept when the chrome hides.
+    check(app0?.starting, 'waits for layout/full screen to settle before scrolling');
+    await waitFor(() => app0 && !app0.starting, 'settled and scrolling', 2000);
+    // Playing = a compositor glide of <main> (sub-pixel smooth); pausing commits it to a real scroll.
+    const main = $('#main') as HTMLElement;
+    const y0 = window.scrollY;
+    check(app0?.gliding && main.getAnimations().length === 1, 'text glides with one compositor animation');
+    app0?.setSpeed(30);
+    await sleep(1200);
+    const shown = (main.getBoundingClientRect().top + window.scrollY) - main.offsetTop;
     app0?.pause();
+    check(!app0?.gliding && main.getAnimations().length === 0 && !main.style.willChange, 'pause removes the animation');
+    check(window.scrollY > y0 + 5, `pause keeps the place as a real scroll position (${y0} -> ${window.scrollY})`);
+    check(Math.abs((window.scrollY - y0) + shown) < 3 || shown === 0, `no jump when committing (${shown})`);
+    app0?.setSpeed(8);
     const speed = app0?.speed ?? 0;
     $<HTMLButtonElement>('[data-key="as-faster"]', bar)?.click();
     check(app0?.speed === speed + 1 && status.dataset.speed === String(speed + 1), 'faster');
@@ -667,6 +681,28 @@ async function run() {
     $<HTMLButtonElement>('[data-key="test-reveal"]')?.click();
     await sleep(30);
     window.scrollTo(0, 0);
+  } else if (showcase === 'auto-scroll-live') {
+    // Manual smoothness check: surah 2 (longest) gliding at speed 15, with a frame-gap readout.
+    await go('#/quran?surah=2');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'auto-scroll button')).click();
+    app.autoScroll?.setSpeed(15);
+    const gaps: number[] = [];
+    let last = 0;
+    const meter = (ts: number) => {
+      if (last) gaps.push(ts - last);
+      last = ts;
+      if (gaps.length < 600) requestAnimationFrame(meter);
+      else {
+        const msg = `Frame check over ${gaps.length} frames while gliding: max gap ${Math.max(...gaps).toFixed(1)} ms, gaps over 25 ms: ${gaps.filter((g) => g > 25).length}`;
+        document.title = msg;
+        const r = document.getElementById('harness-report');
+        if (r) {
+          r.textContent = msg;
+          r.style.cssText += ';position:fixed;top:0;inset-inline:0;z-index:99';
+        }
+      }
+    };
+    requestAnimationFrame(meter);
   } else if (showcase === 'auto-scroll') {
     await go('#/quran?hizb=5');
     (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'auto-scroll button')).click();
