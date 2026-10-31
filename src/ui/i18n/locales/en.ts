@@ -277,6 +277,7 @@ export const en = {
   'auto.close': 'Exit auto scroll',
   'auto.minutes': { one: '{count} minute', other: '{count} minutes' },
   'auto.status': '{time} | {speed}',
+  'auto.minutesShort': '{count} min',
   'auto.statusLong': 'About {time} left, speed {speed} of {max}',
   'auto.tapHint': 'Tap a word to mark it as a mistake.',
   'auto.endTitle': 'End reached',
@@ -288,6 +289,12 @@ export const en = {
   'auto.alreadyMarked': 'Already marked: {where}',
   'auto.undo': 'Undo',
   'auto.undone': 'Mark undone.',
+  'auto.hafeezOff': 'Hafeez mode: off. Tap to hide the lower half',
+  'auto.hafeezHalf': 'Hafeez mode: lower half hidden. Tap to show first words',
+  'auto.hafeezHint': 'Hafeez mode: first words shown. Tap to turn off',
+  'auto.hafeezHalfToast': 'Lower half hidden: recite what comes next. It appears as it scrolls up.',
+  'auto.hafeezHintToast': 'The first word of each ayah is shown as a hint.',
+  'auto.hafeezOffToast': 'Hafeez mode off.',
 
   // ---------------------------------------------------------------- mark dialog
   'mark.where': '{ref}, word {n}',

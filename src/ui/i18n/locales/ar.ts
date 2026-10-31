@@ -277,6 +277,7 @@ export const ar: Record<MessageKey, Message> = {
   'auto.close': 'إنهاء التمرير التلقائي',
   'auto.minutes': { zero: '{count} دقيقة', one: 'دقيقة واحدة', two: 'دقيقتان', few: '{count} دقائق', many: '{count} دقيقة', other: '{count} دقيقة' },
   'auto.status': '{time} | {speed}',
+  'auto.minutesShort': '{count} د',
   'auto.statusLong': 'متبقٍّ حوالي {time}، السرعة {speed} من {max}',
   'auto.tapHint': 'اضغط على كلمة لتسجيلها خطأً.',
   'auto.endTitle': 'وصلت إلى النهاية',
@@ -288,6 +289,12 @@ export const ar: Record<MessageKey, Message> = {
   'auto.alreadyMarked': 'مسجّل مسبقًا: {where}',
   'auto.undo': 'تراجع',
   'auto.undone': 'تم التراجع عن التسجيل.',
+  'auto.hafeezOff': 'وضع الحافظ: متوقف. اضغط لإخفاء النصف السفلي',
+  'auto.hafeezHalf': 'وضع الحافظ: النصف السفلي مخفي. اضغط لإظهار أوائل الآيات',
+  'auto.hafeezHint': 'وضع الحافظ: أوائل الآيات ظاهرة. اضغط للإيقاف',
+  'auto.hafeezHalfToast': 'أُخفي النصف السفلي: اقرأ ما بعده من حفظك، وسيظهر عند صعوده.',
+  'auto.hafeezHintToast': 'تظهر أول كلمة من كل آية كتلميح.',
+  'auto.hafeezOffToast': 'تم إيقاف وضع الحافظ.',
 
   // ---------------------------------------------------------------- mark dialog
   'mark.where': '{ref}، الكلمة {n}',

@@ -423,7 +423,11 @@ async function run() {
     check(getComputedStyle($('.division-panel') as HTMLElement).display === 'none', 'side panel hidden');
     check(getComputedStyle($('.navigator') as HTMLElement).display === 'none', 'navigator hidden');
     const status = $('.as-status', bar) as HTMLElement;
-    check(/^\d+ minutes? \| \d+$/.test(status.textContent ?? ''), `status "${status.textContent}"`);
+    const long = $('.as-long', status)?.textContent ?? '';
+    check(/^\d+ minutes? \| \d+$/.test(long), `status "${long}"`);
+    check(/^\d+ min \| \d+$/.test($('.as-short', status)?.textContent ?? ''), 'compact status for narrow phones');
+    const shownStatus = [...status.children].filter((c) => getComputedStyle(c).display !== 'none');
+    check(shownStatus.length === 1, 'exactly one status form is visible');
     const app0 = app.autoScroll;
     check(app0?.active, 'session registered on the app');
     // The text keeps its width (no re-wrap) and the reading place is kept when the chrome hides.
@@ -510,6 +514,74 @@ async function run() {
     (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'button again')).click();
     await go('#/dashboard');
     check(!$('.autoscroll-bar') && !document.body.classList.contains('focus-reading'), 'leaving the Quran exits focus mode');
+    document.querySelector('.toast-region')?.replaceChildren();
+  });
+
+  await step('Hafeez mode: eye hides the lower half, reveals line by line, optional first words', async () => {
+    await go('#/quran?hizb=5');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'auto-scroll button')).click();
+    const session = await waitFor(() => app.autoScroll, 'session');
+    session.pause();
+    window.scrollTo(0, 0);
+    await sleep(30);
+    const eye = await waitFor(() => $<HTMLButtonElement>('.autoscroll-bar [data-key="as-hafeez"]'), 'eye button');
+    const plus = $('.autoscroll-bar [data-key="as-faster"]') as HTMLElement;
+    check(plus.nextElementSibling === eye, 'eye sits beside +');
+    check(eye.getAttribute('aria-pressed') === 'false' && /off/.test(eye.getAttribute('aria-label') ?? ''), 'starts off');
+
+    eye.click();
+    await sleep(80);
+    check(session.hafeez === 'half' && document.body.classList.contains('hafeez-hide'), 'tap 1: lower half hidden');
+    const line = $('.hafeez-line') as HTMLElement;
+    const mid = line.getBoundingClientRect().top;
+    check(mid > 100 && Math.abs(mid - (window.innerHeight - ($('.autoscroll-bar') as HTMLElement).offsetHeight) / 2) < 2, `boundary in the middle (${mid})`);
+    const words = $$<HTMLElement>('.quran .w');
+    const centre = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+    const above = words.filter((w) => centre(w) < mid - 4 && centre(w) > 0);
+    const below = words.filter((w) => centre(w) > mid + 4 && centre(w) < window.innerHeight);
+    check(above.length > 0 && below.length > 0, `words on both sides (${above.length}/${below.length})`);
+    check(above.every((w) => !w.classList.contains('hz-h')) && below.every((w) => w.classList.contains('hz-h')), 'hidden exactly below the middle');
+    const ghost = below.find((w) => w.dataset.p !== '1' && !w.classList.contains('marked')) as HTMLElement;
+    const shownColor = getComputedStyle(above.find((w) => !w.classList.contains('marked')) as HTMLElement).color;
+    check(getComputedStyle(ghost).color !== shownColor, 'hidden words are faint ghosts');
+    check(getComputedStyle(ghost).pointerEvents === 'none', 'hidden words cannot be tapped');
+    const num = $$<HTMLElement>('.quran .ayah-end').find((e) => centre(e) > mid + 4 && centre(e) < window.innerHeight);
+    check(!num || getComputedStyle(num).visibility !== 'hidden', 'ayah numbers stay visible');
+
+    // Line by line: scrolling up by one line reveals that line only.
+    const firstHidden = below.sort((a, b) => centre(a) - centre(b))[0] as HTMLElement;
+    const lineH = parseFloat(getComputedStyle($('.quran') as HTMLElement).lineHeight) || 60;
+    const dy = centre(firstHidden) - mid + 2;
+    window.scrollBy(0, dy);
+    await sleep(80);
+    check(!firstHidden.classList.contains('hz-h'), 'line revealed after crossing the middle');
+    const stillHidden = below.filter((w) => centre(w) > mid + lineH * 0.6);
+    check(stillHidden.length > 0 && stillHidden.every((w) => w.classList.contains('hz-h')), 'lines below stay hidden');
+    window.scrollBy(0, -dy);
+    await sleep(80);
+    check(firstHidden.classList.contains('hz-h'), 'scrolling back hides it again');
+
+    eye.click();
+    await sleep(40);
+    check(session.hafeez === 'hint' && /first words/.test(eye.getAttribute('aria-label') ?? ''), 'tap 2: first-word hints');
+    const firstWord = $$<HTMLElement>('.quran .w.hz-h[data-p="1"]:not(.marked)')[0];
+    check(firstWord && getComputedStyle(firstWord).color === shownColor, 'first word of a hidden ayah is visible');
+    check(getComputedStyle(ghost).color !== shownColor, 'other hidden words stay faint');
+
+    eye.click();
+    await sleep(40);
+    check(session.hafeez === 'off' && !$('.hz-h') && !$('.hafeez-line') && !document.body.classList.contains('hafeez-hide'), 'tap 3: off, everything visible');
+
+    // The choice is remembered for the next time auto scroll starts.
+    eye.click();
+    await sleep(40);
+    session.stop();
+    check(!$('.hz-h') && !document.body.classList.contains('hafeez-hide'), 'X clears hafeez mode');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'button again')).click();
+    await waitFor(() => app.autoScroll?.hafeez === 'half', 'restored saved mode');
+    app.autoScroll?.cycleHafeez();
+    app.autoScroll?.cycleHafeez();
+    app.autoScroll?.stop();
     document.querySelector('.toast-region')?.replaceChildren();
   });
 
@@ -709,6 +781,14 @@ async function run() {
     $<HTMLButtonElement>('[data-key="test-reveal"]')?.click();
     await sleep(30);
     window.scrollTo(0, 0);
+  } else if (showcase === 'hafeez-mode') {
+    await go('#/quran?hizb=5');
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'auto-scroll button')).click();
+    app.autoScroll?.pause();
+    app.autoScroll?.setSpeed(15);
+    window.scrollTo(0, 0);
+    await sleep(50);
+    app.autoScroll?.setHafeez('hint', false);
   } else if (showcase === 'auto-scroll-live') {
     // Manual smoothness check: surah 2 (longest) gliding at speed 15, with a frame-gap readout.
     await go('#/quran?surah=2');
@@ -762,7 +842,8 @@ function report(storeKind: string) {
   }
   el.replaceChildren(
     Object.assign(document.createElement('strong'), { textContent: `Browser harness: ${passed}/${results.length} passed (storage: ${storeKind}). Text shown is a synthetic placeholder, not Quran text.` }),
-    ...results.map((r) => Object.assign(document.createElement('div'), { textContent: `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `: ${r.detail}` : ''}` })),
+    // Failures first, so they are visible without scrolling.
+    ...[...results.filter((r) => !r.ok), ...results.filter((r) => r.ok)].map((r) => Object.assign(document.createElement('div'), { textContent: `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `: ${r.detail}` : ''}` })),
   );
 }
 

@@ -420,7 +420,16 @@ body:has(.dock:not([hidden])) .autoscroll-fab { bottom: 5.5rem; }
 .autoscroll-bar [data-key='as-toggle'] svg, .autoscroll-bar [data-key='as-back'] svg { fill: currentColor; }
 .as-status { flex: 1; text-align: center; font-size: 1.1rem; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .autoscroll-bar.paused .as-status { opacity: 0.85; }
-@media (max-width: 480px) { .autoscroll-bar button.icon { width: 2.75rem; height: 2.75rem; } .as-status { font-size: 1rem; } }
+.as-short { display: none; }
+@media (max-width: 520px) {
+  .autoscroll-bar { gap: 0; padding-inline: 0.35rem; }
+  .autoscroll-bar button.icon { width: 2.55rem; height: 2.75rem; }
+  .autoscroll-bar svg { width: 1.5rem; height: 1.5rem; }
+  .as-status { font-size: 0.98rem; }
+  .as-long { display: none; }
+  .as-short { display: inline; }
+}
+@media (max-width: 370px) { .autoscroll-bar button.icon { width: 2.3rem; } .autoscroll-bar svg { width: 1.35rem; height: 1.35rem; } }
 
 body.focus-reading .rail, body.focus-reading .topbar, body.focus-reading .dock, body.focus-reading .shell-notices,
 body.focus-reading .skip-link, body.focus-reading .autoscroll-fab, body.focus-reading main .page-head,
@@ -434,6 +443,18 @@ body.focus-reading .reader-layout { display: block; }
 body.focus-reading .mushaf { border-color: transparent; box-shadow: none; }
 body.focus-reading .ayah.current { background: none; }
 body.focus-reading .toast-region { top: max(1rem, env(safe-area-inset-top)); }
+/* Hafeez mode: words below the middle are faint ghosts (ayah numbers stay clear) and cannot be tapped. */
+body.hafeez-hide:not(.hafeez-hint) .quran .w.hz-h,
+body.hafeez-hint .quran .w.hz-h:not([data-p='1']),
+body.hafeez-hide .quran .pause-mark.hz-h {
+  color: color-mix(in srgb, var(--ink) 90%, transparent); background: none;
+  text-decoration-color: transparent; pointer-events: none;
+}
+.hafeez-line {
+  position: fixed; inset-inline: 0; height: 0; z-index: 40; pointer-events: none;
+  border-top: 1.5px dashed color-mix(in srgb, var(--gilt) 55%, transparent);
+}
+.autoscroll-bar [data-key='as-hafeez'][aria-pressed='true'] { background: color-mix(in srgb, var(--accent-ink) 16%, transparent); }
 .w.just-marked { animation: just-marked 0.7s ease-out; }
 @keyframes just-marked { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mistake) 60%, transparent); } 100% { box-shadow: 0 0 0 0.5em transparent; } }
 
