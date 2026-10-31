@@ -427,7 +427,7 @@ async function run() {
     const app0 = app.autoScroll;
     check(app0?.active, 'session registered on the app');
     // The text keeps its width (no re-wrap) and the reading place is kept when the chrome hides.
-    check(app0?.starting, 'waits for layout/full screen to settle before scrolling');
+    check(app0?.starting, 'waits for layout to settle before scrolling');
     await waitFor(() => app0 && !app0.starting, 'settled and scrolling', 2000);
     // Playing = a compositor glide of <main> (sub-pixel smooth); pausing commits it to a real scroll.
     const main = $('#main') as HTMLElement;

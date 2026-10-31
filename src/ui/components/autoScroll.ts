@@ -10,7 +10,11 @@
  * position, so taps, the saved reading position and native scrolling keep working.
  *
  * The control bar lives on <body>, outside <main>, and survives re-renders and route changes within
- * the Quran section. Leaving the Quran section, pressing X / Esc, or leaving full screen ends it.
+ * the Quran section. Leaving the Quran section or pressing X / Esc ends it.
+ *
+ * Focus mode deliberately does NOT request browser full screen: Chrome always shows a
+ * "To exit full screen…" notice when a page enters full screen, which covered the text at start.
+ * Hiding the app chrome (FOCUS_CLASS) is enough.
  */
 import { clampSpeed, minutesLeft, pxPerSecond, SPEED_DEFAULT, SPEED_MAX, SPEED_MIN } from '../../core/reading/autoScroll.ts';
 import type { App } from '../app.ts';
@@ -25,8 +29,6 @@ const FOCUS_CLASS = 'focus-reading';
 const RESUME_DELAY_MS = 1500;
 /** Speed eases in over this time on start and resume, so motion never begins with a jolt. */
 const RAMP_MS = 700;
-/** Longest wait for the browser to finish entering full screen before scrolling starts. */
-const SETTLE_MAX_MS = 450;
 /** After the reader scrolls by hand while playing, gliding resumes once they stop for this long. */
 const MANUAL_IDLE_MS = 900;
 /** Status text refresh interval (reads only cached values, never layout). */
@@ -83,16 +85,15 @@ export class AutoScrollSession {
   private endPrompted = false;
   private resumeTimer: ReturnType<typeof setTimeout> | null = null;
   private wakeLock: WakeLockLike | null = null;
-  private enteredFullscreen = false;
   private stopped = false;
-  /** True until layout and full screen have settled after start; nothing scrolls meanwhile. */
+  /** True until the focus-mode layout has settled after start; nothing scrolls meanwhile. */
   private warming = true;
   /** Cached document height; refreshed on resize/content changes instead of on every frame. */
   private maxScroll = 0;
   private resizeObs: ResizeObserver | null = null;
   private readonly onResize = () => {
     this.measure();
-    // The distance left changed (rotation, full screen exit): re-plan the glide from here.
+    // The distance left changed (rotation, browser bars): re-plan the glide from here.
     if (this.glide) {
       this.commit();
       this.startGlide(false);
@@ -113,12 +114,6 @@ export class AutoScrollSession {
     if (this.manualTimer) this.scheduleManualResume();
   };
   private readonly onKey = (e: KeyboardEvent) => this.handleKey(e);
-  private readonly onFullscreen = () => {
-    if (this.enteredFullscreen && !document.fullscreenElement) {
-      this.enteredFullscreen = false;
-      this.stop();
-    }
-  };
   private readonly onVisibility = () => {
     if (document.visibilityState === 'hidden') {
       // The animation timeline keeps running in a background tab: do not jump ahead meanwhile.
@@ -154,10 +149,7 @@ export class AutoScrollSession {
     );
   }
 
-  /**
-   * Starts focus mode from the current scroll position. Must be called from a click handler:
-   * the full-screen request is made synchronously, before anything is awaited.
-   */
+  /** Starts focus mode from the current scroll position (called from a click handler). */
   static start(app: App, portion: PortionInfo): AutoScrollSession {
     app.autoScroll?.stop();
     const session = new AutoScrollSession(app, SPEED_DEFAULT);
@@ -165,12 +157,10 @@ export class AutoScrollSession {
     session.portion = portion;
     // Hide the app chrome without losing the reader's place: the ayah at the top stays put.
     const anchor = captureAnchor();
-    const settled = session.enterFullscreen();
     document.body.classList.add(FOCUS_CLASS);
     document.body.append(session.bar);
     restoreAnchor(anchor);
     document.addEventListener('keydown', session.onKey);
-    document.addEventListener('fullscreenchange', session.onFullscreen);
     document.addEventListener('visibilitychange', session.onVisibility);
     window.addEventListener('resize', session.onResize);
     window.addEventListener('scroll', session.onScroll, { passive: true });
@@ -186,17 +176,14 @@ export class AutoScrollSession {
     session.render();
     session.statusTimer = setInterval(() => session.renderStatus(), STATUS_MS);
     session.toggleBtn.focus({ preventScroll: true });
-    // Start moving only once full screen and the new layout are done (two frames later),
+    // Start moving only once the new layout is done (two frames later),
     // so the first frames are not competing with a page-wide re-layout.
-    void settled.then(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       if (session.stopped) return;
       restoreAnchor(anchor);
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (session.stopped) return;
-        session.warming = false;
-        if (!session.paused) session.startGlide(true);
-      }));
-    });
+      session.warming = false;
+      if (!session.paused) session.startGlide(true);
+    }));
     void session.lockScreen();
     // Restore the reader's preferred speed (kept on this device, like the reading position).
     void app.s.store.settings.get<number>(SPEED_KEY).then((v) => {
@@ -216,7 +203,7 @@ export class AutoScrollSession {
     queueMicrotask(() => this.measure());
   }
 
-  /** Still waiting for layout/full screen to settle after start (no scrolling yet). */
+  /** Still waiting for layout to settle after start (no scrolling yet). */
   get starting(): boolean {
     return this.warming && !this.stopped;
   }
@@ -282,7 +269,6 @@ export class AutoScrollSession {
     this.clearResumeTimer();
     this.clearManualTimer();
     document.removeEventListener('keydown', this.onKey);
-    document.removeEventListener('fullscreenchange', this.onFullscreen);
     document.removeEventListener('visibilitychange', this.onVisibility);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('scroll', this.onScroll);
@@ -294,10 +280,6 @@ export class AutoScrollSession {
     this.bar.remove();
     document.body.classList.remove(FOCUS_CLASS);
     void this.releaseLock();
-    if (this.enteredFullscreen && document.fullscreenElement) {
-      this.enteredFullscreen = false;
-      void document.exitFullscreen?.().catch(() => undefined);
-    }
     if (this.app.autoScroll === this) this.app.autoScroll = null;
     // Words marked during focus mode were updated in place; re-render so every view is consistent.
     if (this.app.route.name === 'quran') void this.app.refresh();
@@ -492,22 +474,6 @@ export class AutoScrollSession {
     this.status.title = t('auto.statusLong', { time, speed: fmtNum(this.speed), max: fmtNum(SPEED_MAX) });
     this.status.dataset.speed = String(this.speed);
     this.status.dataset.minutes = String(mins);
-  }
-
-  /** Requests full screen; resolves when it is done, refused, or after SETTLE_MAX_MS at most. */
-  private enterFullscreen(): Promise<void> {
-    const el = document.documentElement;
-    const cap = new Promise<void>((r) => setTimeout(r, SETTLE_MAX_MS));
-    if (document.fullscreenElement || typeof el.requestFullscreen !== 'function') return Promise.resolve();
-    try {
-      const req = el.requestFullscreen({ navigationUI: 'hide' }).then(
-        () => { this.enteredFullscreen = !this.stopped; },
-        () => undefined, // not allowed here (e.g. iOS Safari): focus mode still hides the app chrome
-      );
-      return Promise.race([req, cap]);
-    } catch {
-      return Promise.resolve();
-    }
   }
 
   /** Keeps the screen on while scrolling (supported on most mobile browsers). */
