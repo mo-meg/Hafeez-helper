@@ -138,6 +138,19 @@ function divisionMarker(app: App, idx: number): HTMLElement | null {
   return parts.length ? h('span', { class: 'division-marker', role: 'note', dir: dir() }, parts.join(t('common.listSep'))) : null;
 }
 
+/**
+ * Full-width band where a mushaf page begins (e.g. "Page 155"). Also shown at the top of the view
+ * when the portion starts mid-page, so the reader always knows which page they are on.
+ */
+function pageMarker(app: App, idx: number, atRangeStart: boolean): HTMLElement | null {
+  const index = app.quran.index;
+  if (!index.has('page')) return null;
+  const n = index.numberAt('page', idx);
+  if (n === null) return null;
+  if (!atRangeStart && index.range('page', n).startIndex !== idx) return null;
+  return h('div', { class: 'page-marker', role: 'note', dir: dir(), dataset: { page: n } }, t('division.markerPage', { n }));
+}
+
 function ayahActions(app: App, ref: AyahRef, ms: readonly Mistake[]) {
   const idx = toIndex(ref);
   openDialog({
@@ -178,6 +191,8 @@ function textBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMap
   for (let idx = range.start; idx <= range.end; idx++) {
     const ref = fromIndex(idx);
     const ayah = text?.ayahAt(idx);
+    const page = pageMarker(app, idx, idx === range.start);
+    if (page) container.append(page);
     if (idx === range.start && ref.ayah !== 1) {
       const info = surahInfo(ref.surah);
       container.append(h('div', { class: 'surah-head', dir: dir() }, h('span', { class: 'tr' }, t('quran.continuing', { name: surahName(info.number), ref: `${ref.surah}:${ref.ayah}` }))));
@@ -302,6 +317,8 @@ function refOnlyBody(app: App, range: ViewRange, maps: ReturnType<typeof mistake
   for (let idx = range.start; idx <= range.end; idx++) {
     const ref = fromIndex(idx);
     const ms = maps.byAyah.get(idx) ?? [];
+    const page = pageMarker(app, idx, idx === range.start);
+    if (page) rows.push(page);
     const marker = divisionMarker(app, idx);
     if (marker) rows.push(marker);
     rows.push(

@@ -131,6 +131,7 @@ export const en = {
   'division.markerHizb': 'Hizb {n}',
   'division.markerQuarter': 'Hizb {hizb}, quarter {q}',
   'division.markerEighth': 'Hizb {hizb}, eighth {e}',
+  'division.markerPage': 'Page {n}',
   'scope.all': 'Entire Quran',
   'scope.surah': 'Surah {name}',
   'scope.surahs': { one: '{count} surah', other: '{count} surahs' },

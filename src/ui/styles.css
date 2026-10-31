@@ -280,6 +280,16 @@ th { color: var(--mist); font-weight: 600; font-size: 0.82rem; }
 .division-marker { display: block; text-align: center; font-family: var(--ui-font); font-size: 0.8rem; color: var(--gilt); margin: 0.6rem 0 0.2rem; line-height: 1.6; word-spacing: normal; }
 :root[lang='ar'] .division-marker { font-family: var(--ui-font-ar); }
 .division-marker::before, .division-marker::after { content: ''; display: inline-block; width: 2.5rem; height: 1px; background: currentColor; vertical-align: middle; margin: 0 0.6rem; opacity: 0.5; }
+/* Page band: a filled full-width strip (distinct from the thin gilt hizb/quarter line). It bleeds
+   to just inside the mushaf frame's gilt rule (frame padding minus the 7px inset rule). */
+.page-marker {
+  display: block; margin: 1.1rem calc(7px - clamp(1rem, 4vw, 2.75rem)) 0.6rem; padding: 0.4rem 1rem;
+  background: var(--accent-soft); color: var(--ink); text-align: center; text-align-last: center;
+  font-family: var(--ui-font); font-size: 1rem; font-weight: 500; line-height: 1.6; word-spacing: normal;
+  font-variant-numeric: tabular-nums;
+}
+:root[lang='ar'] .page-marker { font-family: var(--ui-font-ar); }
+.quran > .page-marker:first-child { margin-top: 0; }
 .ayah { scroll-margin-top: 6rem; }
 .ayah.current { background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: 6px; }
 .ayah.marked-ayah > .w { text-decoration: underline 0.12em color-mix(in srgb, var(--mistake) 55%, transparent); text-underline-offset: 0.45em; }

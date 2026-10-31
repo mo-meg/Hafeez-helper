@@ -92,7 +92,7 @@ const setInput = (el: HTMLInputElement | HTMLSelectElement, value: string) => {
 
 async function makeApp(store: Store, audio: FakeAudio, root: HTMLElement): Promise<App> {
   const services = createServices({ store, clock: systemClock, ids: randomIds, fetcher: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
-  const app = new App({ services, audioBackend: audio, audioCache: new AudioCache(store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withEighths: true }) }, enableReminders: false });
+  const app = new App({ services, audioBackend: audio, audioCache: new AudioCache(store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withEighths: true, withPages: true }) }, enableReminders: false });
   await app.start(root);
   return app;
 }
@@ -386,6 +386,34 @@ async function run() {
     check(res.summary.mistakes === 6 && res.summary.reviews >= 6, `restored ${JSON.stringify(res.summary)}`);
   });
 
+  await step('Page bands mark where each mushaf page starts', async () => {
+    await go('#/quran?hizb=5');
+    const bands = await waitFor(() => { const b = $$('.quran .page-marker'); return b.length ? b : null; }, 'page bands');
+    const nums = bands.map((b) => Number(b.dataset.page));
+    const index = app.quran.index;
+    const range = index.range('hizb', 5);
+    const first = index.numberAt('page', range.startIndex) as number;
+    const last = index.numberAt('page', range.endIndex) as number;
+    check(nums[0] === first && nums.at(-1) === last, `pages ${nums[0]}..${nums.at(-1)} (expected ${first}..${last})`);
+    check(nums.every((n, i) => i === 0 || n === (nums[i - 1] as number) + 1), 'one band per page, in order');
+    check(bands[0]?.textContent === `Page ${first}`, `label "${bands[0]?.textContent}"`);
+    check(($('.quran') as HTMLElement).firstElementChild === bands[0], 'portion opens with its page band');
+    // Every later band sits right before the first ayah of its page.
+    for (const b of bands.slice(1)) {
+      const start = index.range('page', Number(b.dataset.page)).startIndex;
+      let next = b.nextElementSibling as HTMLElement | null;
+      while (next && !next.dataset.idx) next = next.nextElementSibling as HTMLElement | null;
+      check(Number(next?.dataset.idx) === start, `page ${b.dataset.page} band before its first ayah`);
+    }
+    const band = getComputedStyle(bands[0] as HTMLElement);
+    const hizbLine = getComputedStyle($('.division-marker') as HTMLElement);
+    check(band.backgroundColor !== hizbLine.backgroundColor && band.backgroundColor !== 'rgba(0, 0, 0, 0)', 'filled band, unlike the hizb line');
+    check($$('.ref-only').length === 0 || $$('.ref-only .page-marker').length > 0, 'reference list also has bands');
+    await app.savePrefs({ ...app.prefs, language: 'ar' });
+    check($('.quran .page-marker')?.textContent?.startsWith('الصفحة') ?? false, 'Arabic label');
+    await app.savePrefs({ ...app.prefs, language: 'en' });
+  });
+
   await step('Auto scroll: full-screen focus bar, speed, quick marks with undo, next portion', async () => {
     await go('#/quran?hizb=5');
     const before = (await store.mistakes.getAll()).length;
@@ -634,7 +662,7 @@ async function run() {
     await engine.init();
     const account: AccountController = { email: s.user.email, sync: engine, sessionEnded: false, onSessionEnded: () => {}, signOut: async () => {}, signInAgain: () => {}, deleteAccount: () => engine.deleteAccount(), changePassword: async () => {} };
     const services = createServices({ store: engine.store, clock: systemClock, ids: randomIds, fetcher: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
-    app = new App({ services, audioBackend: audio, audioCache: new AudioCache(engine.store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withEighths: true }) }, enableReminders: false, account });
+    app = new App({ services, audioBackend: audio, audioCache: new AudioCache(engine.store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withEighths: true, withPages: true }) }, enableReminders: false, account });
     await app.start(root);
     await app.savePrefs({ ...app.prefs, language: 'en' });
     check(($('.account-mini .acct-email')?.textContent ?? '') === 'reader@example.com', 'email shown in the sidebar');

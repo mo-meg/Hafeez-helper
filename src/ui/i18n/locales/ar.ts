@@ -131,6 +131,7 @@ export const ar: Record<MessageKey, Message> = {
   'division.markerHizb': 'الحزب {n}',
   'division.markerQuarter': 'الحزب {hizb}، الربع {q}',
   'division.markerEighth': 'الحزب {hizb}، الثُّمن {e}',
+  'division.markerPage': 'الصفحة {n}',
   'scope.all': 'القرآن كاملًا',
   'scope.surah': 'سورة {name}',
   'scope.surahs': { one: 'سورة واحدة', two: 'سورتان', few: '{count} سور', many: '{count} سورة', other: '{count} سورة' },

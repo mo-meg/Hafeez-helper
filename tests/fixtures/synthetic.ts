@@ -35,7 +35,7 @@ function interpolate(known: Map<number, number>, total: number): number[] {
   return out;
 }
 
-export function syntheticDivisions(opts: { withEighths?: boolean } = {}): DivisionDataset {
+export function syntheticDivisions(opts: { withEighths?: boolean; withPages?: boolean } = {}): DivisionDataset {
   const known = new Map<number, number>();
   VERIFIED_JUZ_STARTS.forEach(([s, a], j) => known.set(j * 8, toIndex({ surah: s, ayah: a })));
   for (const [h, [s, a]] of VERIFIED_HIZB_STARTS) known.set((h - 1) * 4, toIndex({ surah: s, ayah: a }));
@@ -59,7 +59,20 @@ export function syntheticDivisions(opts: { withEighths?: boolean } = {}): Divisi
     juzStarts: VERIFIED_JUZ_STARTS,
     quarterStarts: quarters.map(toPair),
     ...(opts.withEighths ? { eighthStarts: eighths.map(toPair) } : {}),
+    // Evenly spread placeholder pages, consistent with the page numbers in syntheticText().
+    ...(opts.withPages ? { pageStarts: syntheticPageStarts().map(toPair) } : {}),
   };
+}
+
+function syntheticPageStarts(): number[] {
+  const starts: number[] = [];
+  let last = 0;
+  for (let g = 1; g <= TOTAL_AYAT; g++) {
+    const p = Math.min(604, Math.ceil((g * 604) / TOTAL_AYAT));
+    if (p !== last) starts.push(g);
+    last = p;
+  }
+  return starts;
 }
 
 /** Synthetic "text": surah ≥ 2 (except 9) ayah 1 is prefixed with the placeholder opening, mimicking the source's basmala prefix. */
