@@ -247,6 +247,7 @@ export class AutoScrollSession {
     const body = document.body.classList;
     body.toggle('hafeez-hide', mode !== 'off');
     body.toggle('hafeez-hint', mode === 'hint');
+    this.measure(); // the extra bottom padding changes the scrollable height
     if (mode === 'off') this.hzClear();
     else if (!this.hzLines.length) this.hzBuild();
     this.render();
@@ -479,7 +480,8 @@ export class AutoScrollSession {
   /** Reveals lines that rose above the boundary and re-hides lines that went back below it. */
   private hzUpdate(): void {
     const lines = this.hzLines;
-    const threshold = this.position() + this.boundary;
+    // At the very end of the page nothing can scroll further: reveal everything that is left.
+    const threshold = this.maxScroll > 0 && this.atEnd() ? Infinity : this.position() + this.boundary;
     let k = this.hzShown;
     while (k < lines.length && (lines[k] as HzLine).y < threshold) {
       for (const el of (lines[k] as HzLine).els) el.classList.remove(HIDDEN);
