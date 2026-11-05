@@ -253,6 +253,9 @@ export class App {
     else location.hash = hash;
   }
 
+  /** True while rendering a newly entered route (false for in-place re-renders that keep scroll). */
+  freshRoute = true;
+
   render(preserve: boolean): void {
     const key = `${this.route.name}?${this.route.params.toString()}`;
     const keep = preserve && key === this.lastRouteKey;
@@ -263,6 +266,7 @@ export class App {
       if (current) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     }
+    this.freshRoute = !keep;
     let view: Node;
     try {
       view = this.view();

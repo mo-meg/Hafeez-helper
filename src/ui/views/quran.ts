@@ -454,8 +454,10 @@ export function quranView(app: App): Node {
 
   // Scroll to a requested ayah and track the reading position while scrolling.
   const focus = Number(app.route.params.get('focus') ?? NaN);
+  // Only jump to the focused ayah when the route is first entered; later re-renders keep the user's scroll.
+  const jump = app.freshRoute;
   queueMicrotask(() => {
-    if (Number.isInteger(focus)) document.getElementById(`a-${focus}`)?.scrollIntoView({ block: 'center' });
+    if (jump && Number.isInteger(focus)) document.getElementById(`a-${focus}`)?.scrollIntoView({ block: 'center' });
     if (typeof IntersectionObserver === 'undefined') return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const obs = new IntersectionObserver((entries) => {
