@@ -24,6 +24,8 @@ const PATHS: Record<string, string[]> = {
   eyeOff: ['M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M3 3l18 18'],
   eyeHint: ['M2 11s3.6-6.5 10-6.5S22 11 22 11s-3.6 6.5-10 6.5S2 11 2 11z', 'M12 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M3 2.5l18 17', 'M14 22h7'],
   flagNext: ['M4 21V4h9l-1.5 3.5L13 11H4', 'M16 8l4 4-4 4'],
+  chevronDown: ['M6 9l6 6 6-6'],
+  search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M20 20l-4-4'],
 };
 
 export function icon(name: keyof typeof PATHS | string): SVGElement {

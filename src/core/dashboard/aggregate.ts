@@ -168,7 +168,7 @@ export function aggregateDashboard(input: AggregateInput): DashboardData {
 
   const byDivision: Partial<Record<DivisionKind, GroupPerformance[]>> = {};
   if (index) {
-    for (const kind of ['juz', 'hizb', 'quarter', 'eighth'] as const) {
+    for (const kind of ['juz', 'hizb', 'quarter'] as const) {
       if (!index.has(kind)) continue;
       byDivision[kind] = performance(
         (m) => index.numberAt(kind, m.globalIndex),

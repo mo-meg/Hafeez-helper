@@ -4,7 +4,7 @@ import { VERIFIED_JUZ_STARTS } from '../src/core/quran/anchors.ts';
 import { ANCHOR_ONLY_DATASET, DivisionIndex, DivisionUnavailableError, type DivisionDataset } from '../src/core/quran/divisions.ts';
 import { validateDivisionDataset } from '../src/core/quran/divisionValidation.ts';
 import { compareRefs, formatRef, fromIndex, isValidRef, nextRef, parseRef, prevRef, sortByQuranOrder, toIndex } from '../src/core/quran/refs.ts';
-import { describeScope, scopeAyahCount, scopeContains, scopeIntervals } from '../src/core/quran/scope.ts';
+import { describeScope, normalizeScope, scopeAyahCount, scopeContains, scopeIntervals, type RevisionScope } from '../src/core/quran/scope.ts';
 import { SURAHS, TOTAL_AYAT } from '../src/core/quran/surahs.ts';
 import { syntheticDivisions } from './fixtures/synthetic.ts';
 
@@ -75,8 +75,8 @@ describe('verified division anchors', () => {
   });
 });
 
-describe('hizb, quarter and eighth navigation (index logic)', () => {
-  const ds = syntheticDivisions({ withEighths: true });
+describe('hizb and quarter navigation (index logic)', () => {
+  const ds = syntheticDivisions();
   const idx = new DivisionIndex(ds);
   it('Hizb 5 spans 2:253 – 3:14 (verified: Wikipedia Juz\' table)', () => {
     const h5 = idx.range('hizb', 5);
@@ -97,22 +97,12 @@ describe('hizb, quarter and eighth navigation (index logic)', () => {
       for (let i = 1; i < 4; i++) assert.equal(qs[i]?.startIndex, (qs[i - 1]?.endIndex ?? 0) + 1);
     }
   });
-  it('eighths tile each quarter exactly', () => {
-    for (let q = 1; q <= 240; q++) {
-      const quarter = idx.range('quarter', q);
-      const es = idx.children(quarter, 'eighth');
-      assert.equal(es.length, 2, `quarter ${q}`);
-      assert.equal(es[0]?.startIndex, quarter.startIndex);
-      assert.equal(es[1]?.endIndex, quarter.endIndex);
-    }
-  });
   it('locates an ayah in every division system', () => {
     const loc = idx.locate({ surah: 2, ayah: 253 });
     assert.equal(loc.juz, 3);
     assert.equal(loc.hizb, 5);
     assert.equal(loc.quarter, 17);
     assert.equal(loc.quarterInHizb, 1);
-    assert.equal(loc.eighthInHizb, 1);
     assert.equal(idx.locate({ surah: 3, ayah: 14 }).hizb, 5);
     assert.equal(idx.locate({ surah: 3, ayah: 15 }).hizb, 6);
   });
@@ -147,17 +137,15 @@ describe('division dataset validation', () => {
     qs[100] = qs[99] as [number, number];
     assert.equal(validateDivisionDataset({ ...good, quarterStarts: qs }).ok, false);
   });
-  it('rejects eighths whose odd entries do not coincide with quarter starts', () => {
-    const withE = syntheticDivisions({ withEighths: true });
-    const es = (withE.eighthStarts ?? []).map((p) => [...p] as [number, number]);
-    es[2] = es[3] as [number, number];
-    es[3] = [es[3]?.[0] ?? 2, (es[3]?.[1] ?? 1) + 1];
-    const res = validateDivisionDataset({ ...withE, eighthStarts: es });
-    assert.equal(res.ok, false);
-  });
 });
 
 describe('revision scopes', () => {
+  it('reads a legacy eighth scope as the quarter containing it', () => {
+    const legacy = { type: 'division', kind: 'eighth', number: 33 } as unknown as RevisionScope;
+    assert.deepEqual(normalizeScope(legacy), { type: 'division', kind: 'quarter', number: 17 });
+    const idx = new DivisionIndex(syntheticDivisions());
+    assert.deepEqual(scopeIntervals(legacy, idx), scopeIntervals({ type: 'division', kind: 'quarter', number: 17 }, idx));
+  });
   const idx = new DivisionIndex(syntheticDivisions());
   it('resolves a hizb scope to its verified interval', () => {
     const iv = scopeIntervals({ type: 'division', kind: 'hizb', number: 5 }, idx);

@@ -18,7 +18,7 @@ export interface ScopePicker {
 }
 
 export function scopePicker(index: DivisionIndex, initial: RevisionScope | null, opts: { idPrefix: string; allowAll?: boolean }): ScopePicker {
-  const kinds: PickerKind[] = ['hizb', 'quarter', 'eighth', 'juz', 'page', 'surahs', 'range', ...(opts.allowAll ? (['all'] as const) : [])];
+  const kinds: PickerKind[] = ['hizb', 'quarter', 'juz', 'page', 'surahs', 'range', ...(opts.allowAll ? (['all'] as const) : [])];
   const available = (k: PickerKind) => (k === 'surahs' || k === 'range' || k === 'all' ? true : index.has(k));
   let kind: PickerKind = initial ? (initial.type === 'division' ? initial.kind : initial.type) : index.has('hizb') ? 'hizb' : 'juz';
   if (!available(kind)) kind = 'juz';

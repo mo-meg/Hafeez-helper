@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { clampSpeed, minutesLeft, nextPortion, portionQuery, pxPerSecond, SPEED_DEFAULT, SPEED_MAX, SPEED_MIN } from '../src/core/reading/autoScroll.ts';
+import { clampSpeed, minutesLeft, nextPortion, portionQuery, previousPortion, pxPerSecond, SPEED_DEFAULT, SPEED_MAX, SPEED_MIN } from '../src/core/reading/autoScroll.ts';
 import { getLocale, setLocale, t, tn } from '../src/ui/i18n/index.ts';
 
-const counts = { juz: 30, hizb: 60, quarter: 240, eighth: 0, page: 604 } as const;
+const counts = { juz: 30, hizb: 60, quarter: 240, page: 604 } as const;
 const count = (k: keyof typeof counts) => counts[k];
 
 describe('auto scroll speed', () => {
@@ -35,6 +35,12 @@ describe('auto scroll: next portion at the end', () => {
   it('moves to the next surah, and stops after An-Nas', () => {
     assert.deepEqual(nextPortion({ division: null, surah: 2 }, count), { kind: 'surah', number: 3 });
     assert.equal(nextPortion({ division: null, surah: 114 }, count), null);
+  });
+  it('finds the previous portion for swipes, null at the very start', () => {
+    assert.deepEqual(previousPortion({ division: null, surah: 2 }), { kind: 'surah', number: 1 });
+    assert.equal(previousPortion({ division: null, surah: 1 }), null);
+    assert.deepEqual(previousPortion({ division: { kind: 'hizb', number: 5 }, surah: null }), { kind: 'hizb', number: 4 });
+    assert.equal(previousPortion({ division: { kind: 'juz', number: 1 }, surah: null }), null);
   });
 
   it('moves to the next division of the same kind, and stops after the last one', () => {

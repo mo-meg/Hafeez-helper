@@ -13,8 +13,8 @@
 
 | File | Tests | Covers |
 |---|---|---|
-| `quran.test.ts` | 23 | 6236 total; index ↔ reference for every ayah; cross-surah navigation; canonical sorting; verified juz ranges; Hizb 5 = 2:253–3:14; quarters/eighths tile hizbs exactly; dataset validation rejects wrong anchors, counts, order, the 3:92 Juz 4 variant, inconsistent eighths; scopes |
-| `data.test.ts` | 18 | Tokenizer keeps every character, skips pause marks; basmala-prefix detection; AlQuran.cloud parser derives boundaries and rejects bad counts/sequences; Tanzil `quran-data.js` parser; eighths import; data service: anchors-only start, bundled text → cache → offline reload, a damaged cache never hides the bundled text, divisions download, /meta mismatch rejection, mirror fallback, eighths import/removal |
+| `quran.test.ts` | 23 | 6236 total; index ↔ reference for every ayah; cross-surah navigation; canonical sorting; verified juz ranges; Hizb 5 = 2:253–3:14; quarters tile hizbs exactly; dataset validation rejects wrong anchors, counts, order, the 3:92 Juz 4 variant; scopes |
+| `data.test.ts` | 18 | Tokenizer keeps every character, skips pause marks; basmala-prefix detection; AlQuran.cloud parser derives boundaries and rejects bad counts/sequences; Tanzil `quran-data.js` parser; data service: anchors-only start, bundled text → cache → offline reload, a damaged cache never hides the bundled text, divisions download, /meta mismatch rejection, mirror fallback |
 | `kfgqpc-import.test.ts` | 5 | The KFGQPC DOCX importer on a synthetic WordprocessingML document: ayat split at `۝N`, line breaks dropped (never spaced), basmala lines recognised, missing/swapped/extra ayat rejected, standalone marks reported |
 | `mistakes.test.ts` | 13 | Word and ayah marking; validation; no duplicates (recurrence instead); note editing; resolve/reopen with preserved history; status rules; one recall applied to all words of an ayah; never auto-resolves; schedule override; explicit deletion; filters |
 | `review.test.ts` | 15 | Policy table; streak once per session; scheduler ladder and factors; quality score: null without data, unaffected by playback, moves with outcomes, per-session dedupe, staleness, reopened mistakes, scope |
@@ -34,7 +34,7 @@ Result in this environment, from the in-app preview browser: **30/30 passed with
 A fresh install is checked to start in Arabic (RTL); the established journeys 1–21 then switch to
 English and drive the UI by its English labels, and journeys 22–28 cover Arabic:
 
-1. Open Hizb 5 with verified boundaries (2:253 to 3:14), four quarters and eight eighths listed.
+1. Open Hizb 5 with verified boundaries (2:253 to 3:14), four quarters listed.
 2. Text is RTL.
 3. Selecting a subdivision navigates to its start.
 4. Mark a whole ayah (2:260).

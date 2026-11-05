@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { DataFormatError, diffStartLists, parseAlQuranCloudFullQuran, parseAlQuranCloudMeta } from '../src/core/data/alquranCloud.ts';
-import { parseEighthsFile } from '../src/core/data/eighthsImport.ts';
 import { QuranDataService, type Fetcher } from '../src/core/data/quranDataService.ts';
 import { parseTanzilQuranDataJs } from '../src/core/data/tanzilMetadata.ts';
 import { QuranText } from '../src/core/quran/text.ts';
@@ -78,15 +77,6 @@ describe('Tanzil quran-data.js parser (format fixture)', () => {
   });
   it('fails loudly when an array is missing', () => {
     assert.throws(() => parseTanzilQuranDataJs('QuranData.Juz = [[1,1]];'), DataFormatError);
-  });
-});
-
-describe('eighths import parsing', () => {
-  it('accepts the documented shapes', () => {
-    assert.deepEqual(parseEighthsFile([[1, 1]]).eighthStarts, [[1, 1]]);
-    assert.deepEqual(parseEighthsFile([{ surah: 2, ayah: 3 }]).eighthStarts, [[2, 3]]);
-    assert.deepEqual(parseEighthsFile({ eighthStarts: [{ start: { surah: 2, ayah: 4 } }], label: 'L' }).eighthStarts, [[2, 4]]);
-    assert.throws(() => parseEighthsFile([{ foo: 1 }]), DataFormatError);
   });
 });
 
@@ -210,17 +200,5 @@ describe('QuranDataService', () => {
     await svc.init();
     await assert.rejects(svc.downloadDivisions(), /Could not download/);
     assert.equal(svc.state.origin, 'bundled');
-  });
-
-  it('imports a consistent eighths list and rejects an inconsistent one', async () => {
-    const svc = new QuranDataService({ cache: new MemoryKeyValue(), fetcher: fakeFetcher(bundled) });
-    await svc.init();
-    const eighths = syntheticDivisions({ withEighths: true }).eighthStarts ?? [];
-    const st = await svc.importEighths({ label: 'Test eighths', eighthStarts: eighths });
-    assert.equal(st.index.count('eighth'), 480);
-    await assert.rejects(svc.importEighths({ eighthStarts: eighths.slice(1) }), DataFormatError);
-    assert.equal(svc.state.index.count('eighth'), 480, 'previous valid data kept');
-    const removed = await svc.removeEighths();
-    assert.equal(removed.index.has('eighth'), false);
   });
 });

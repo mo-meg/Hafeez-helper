@@ -4,7 +4,7 @@
  * - Text: every "ayah" is made of placeholder Arabic words (letter names / the word "كلمة"
  *   meaning "word"), never Quranic text.
  * - Divisions: juz starts and hizb 1–11 starts are the real verified anchors (so validation
- *   passes); ALL OTHER quarter/eighth starts are interpolated placeholders. Tests must only
+ *   passes); ALL OTHER quarter starts are interpolated placeholders. Tests must only
  *   assert real-world boundaries that follow from the verified anchors (e.g. Hizb 5 = 2:253–3:14).
  */
 import { VERIFIED_HIZB_STARTS, VERIFIED_JUZ_STARTS } from '../../src/core/quran/anchors.ts';
@@ -35,7 +35,7 @@ function interpolate(known: Map<number, number>, total: number): number[] {
   return out;
 }
 
-export function syntheticDivisions(opts: { withEighths?: boolean; withPages?: boolean } = {}): DivisionDataset {
+export function syntheticDivisions(opts: { withPages?: boolean } = {}): DivisionDataset {
   const known = new Map<number, number>();
   VERIFIED_JUZ_STARTS.forEach(([s, a], j) => known.set(j * 8, toIndex({ surah: s, ayah: a })));
   for (const [h, [s, a]] of VERIFIED_HIZB_STARTS) known.set((h - 1) * 4, toIndex({ surah: s, ayah: a }));
@@ -44,11 +44,6 @@ export function syntheticDivisions(opts: { withEighths?: boolean; withPages?: bo
     const r = fromIndex(i);
     return [r.surah, r.ayah] as [number, number];
   };
-  const eighths: number[] = [];
-  quarters.forEach((q, i) => {
-    const next = quarters[i + 1] ?? TOTAL_AYAT + 1;
-    eighths.push(q, Math.floor((q + next) / 2));
-  });
   return {
     schema: 'hafeez-divisions/1',
     id: 'synthetic-fixture',
@@ -58,7 +53,6 @@ export function syntheticDivisions(opts: { withEighths?: boolean; withPages?: bo
     synthetic: true,
     juzStarts: VERIFIED_JUZ_STARTS,
     quarterStarts: quarters.map(toPair),
-    ...(opts.withEighths ? { eighthStarts: eighths.map(toPair) } : {}),
     // Evenly spread placeholder pages, consistent with the page numbers in syntheticText().
     ...(opts.withPages ? { pageStarts: syntheticPageStarts().map(toPair) } : {}),
   };

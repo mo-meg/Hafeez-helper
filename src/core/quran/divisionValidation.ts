@@ -79,23 +79,8 @@ export function validateDivisionDataset(ds: DivisionDataset): ValidationResult {
         }
       }
     }
-    if (ds.eighthStarts) {
-      const e = checkList('eighthStarts', ds.eighthStarts, EXPECTED_COUNTS.eighth, errors, { strict: true });
-      if (e && q) {
-        for (let i = 0; i < 240; i++) {
-          if (e[i * 2] !== q[i]) {
-            errors.push(
-              `Eighth ${i * 2 + 1} (${fmt(ds.eighthStarts[i * 2])}) does not coincide with quarter ${i + 1} start (${fmt(ds.quarterStarts[i])}). ` +
-                'The eighths dataset probably uses a different mushaf/numbering system.',
-            );
-            break;
-          }
-        }
-      }
-    }
   } else {
-    if (ds.eighthStarts) errors.push('eighthStarts requires quarterStarts in the same dataset');
-    warnings.push('No quarter (rub al-hizb) data: hizb, quarter and eighth navigation are unavailable.');
+    warnings.push('No quarter (rub al-hizb) data: hizb and quarter navigation are unavailable.');
   }
 
   if (ds.pageStarts) {

@@ -17,7 +17,7 @@ export interface WordRef extends AyahRef {
 }
 
 /** Division kinds supported by the navigation layer. */
-export type DivisionKind = 'juz' | 'hizb' | 'quarter' | 'eighth' | 'page';
+export type DivisionKind = 'juz' | 'hizb' | 'quarter' | 'page';
 
 export interface DivisionRange {
   readonly kind: DivisionKind;
@@ -46,8 +46,5 @@ export interface AyahLocation {
   readonly quarter: number | null;
   /** 1..4 within the hizb. */
   readonly quarterInHizb: number | null;
-  readonly eighth: number | null;
-  /** 1..8 within the hizb. */
-  readonly eighthInHizb: number | null;
   readonly page: number | null;
 }

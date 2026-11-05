@@ -53,7 +53,6 @@ function quranDataSection(app: App): HTMLElement {
   const status = h('p', { role: 'status', class: 'muted' });
   const t = q.text?.dataset;
   const d = q.divisions;
-  const fileInput = h('input', { type: 'file', accept: 'application/json,.json', 'aria-label': tr('set.eighthsFile') });
   return section(
     'data',
     tr('set.data'),
@@ -66,9 +65,8 @@ function quranDataSection(app: App): HTMLElement {
       t?.source.retrievedAt ? [h('dt', null, tr('set.dDownloaded')), h('dd', null, formatDateTime(t.source.retrievedAt))] : null,
       t?.sha256 ? [h('dt', null, 'SHA-256'), h('dd', null, h('code', { dir: 'ltr', style: { 'word-break': 'break-all', 'font-size': '0.8rem' } }, t.sha256))] : null,
       h('dt', null, tr('set.dDivisions')), h('dd', { dir: 'auto' }, d.label),
-      h('dt', null, tr('set.dAvailable')), h('dd', null, (['juz', 'hizb', 'quarter', 'eighth', 'page'] as const).map((k) => `${kindName(k)} ${q.index.has(k) ? fmtNum(q.index.count(k)) : tr('set.dAvailNo')}`).join(tr('common.listSep'))),
+      h('dt', null, tr('set.dAvailable')), h('dd', null, (['juz', 'hizb', 'quarter', 'page'] as const).map((k) => `${kindName(k)} ${q.index.has(k) ? fmtNum(q.index.count(k)) : tr('set.dAvailNo')}`).join(tr('common.listSep'))),
       h('dt', null, tr('set.dVerification')), h('dd', null, q.validation.ok ? tr('set.dPassed') : h('span', { dir: 'auto' }, q.validation.errors.join(' '))),
-      d.eighthsSource ? [h('dt', null, tr('set.dEighths')), h('dd', { dir: 'auto' }, `${d.eighthsSource.name} (${d.eighthsSource.license})`)] : null,
     ),
     h('p', { class: 'muted' }, tr('set.dataHelp'), ANCHOR_SOURCES.map((s, i) => [i ? tr('common.listSep') : '', h('a', { href: s.url, rel: 'noopener', target: '_blank' }, s.label)]), '.'),
     h('p', { class: 'muted' }, tr('set.textFixed')),
@@ -91,22 +89,6 @@ function quranDataSection(app: App): HTMLElement {
       h('button', { type: 'button', class: 'quiet', onclick: async () => { if (await confirmDialog(tr('set.removeDataTitle'), tr('set.removeDataBody'), tr('common.remove'))) { app.quran = await app.s.quran.clearCache(); app.render(true); } } }, tr('set.removeData')),
     ),
     status,
-    h('h3', { style: { 'margin-top': '1rem' } }, tr('set.eighths')),
-    h('p', { class: 'muted' }, tr('set.eighthsHelp')),
-    h(
-      'div',
-      { class: 'row' },
-      fileInput,
-      h('button', {
-        type: 'button', disabled: !d.quarterStarts,
-        onclick: async () => {
-          const f = fileInput.files?.[0];
-          if (!f) { app.toast(tr('error.chooseFile'), 'error'); return; }
-          if (await app.act(async () => { app.quran = await app.s.quran.importEighths(await readJsonFile(f)); }, tr('set.eighthsImported'))) app.render(true);
-        },
-      }, tr('set.importEighths')),
-      q.index.has('eighth') ? h('button', { type: 'button', class: 'quiet', onclick: async () => { app.quran = await app.s.quran.removeEighths(); app.render(true); } }, tr('set.removeEighths')) : null,
-    ),
   );
 }
 

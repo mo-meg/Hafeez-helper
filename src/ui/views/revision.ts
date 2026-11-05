@@ -41,11 +41,10 @@ function boundaries(app: App, scope: RevisionScope): HTMLElement {
   const first = iv[0];
   const last = iv[iv.length - 1];
   const subs: HTMLElement[] = [];
-  if (scope.type === 'division' && (scope.kind === 'hizb' || scope.kind === 'juz' || scope.kind === 'quarter')) {
+  if (scope.type === 'division' && (scope.kind === 'hizb' || scope.kind === 'juz')) {
     const parent = index.range(scope.kind, scope.number);
-    const kind = scope.kind === 'quarter' ? 'eighth' : 'quarter';
-    for (const c of index.children(parent, kind)) {
-      const label = kind === 'quarter' ? t('division.quarterOfHizb', { q: ((c.number - 1) % 4) + 1, hizb: Math.ceil(c.number / 4) }) : t('division.eighthN', { e: ((c.number - 1) % 8) + 1 });
+    for (const c of index.children(parent, 'quarter')) {
+      const label = t('division.quarterOfHizb', { q: ((c.number - 1) % 4) + 1, hizb: Math.ceil(c.number / 4) });
       subs.push(h('li', null, h('a', { href: `#/quran?${c.kind}=${c.number}&focus=${c.startIndex}` }, label), t('rev.startsAt', { ref: refLabel(c.start) })));
     }
   }

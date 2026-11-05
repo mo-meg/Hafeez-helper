@@ -8,7 +8,7 @@ import { TemplateError, type ReciterSource } from '../../core/audio/reciters.ts'
 import { DataFormatError } from '../../core/data/alquranCloud.ts';
 import type { MistakeCategory, MistakeStatus, RecallOutcome, SessionMode } from '../../core/model.ts';
 import { DivisionUnavailableError, type DivisionIndex } from '../../core/quran/divisions.ts';
-import type { RevisionScope } from '../../core/quran/scope.ts';
+import { normalizeScope, type RevisionScope } from '../../core/quran/scope.ts';
 import { surahInfo } from '../../core/quran/surahs.ts';
 import type { AyahRef, DivisionKind } from '../../core/quran/types.ts';
 import { BackupError } from '../../core/storage/backup.ts';
@@ -42,11 +42,11 @@ export function scopeLabel(scope: RevisionScope, index?: DivisionIndex): string 
     case 'all':
       return t('scope.all');
     case 'division': {
-      const base = divisionLabel(scope.kind, scope.number);
-      if (!index || !index.has(scope.kind)) return base;
-      if (scope.kind === 'quarter' || scope.kind === 'eighth') {
-        const per = scope.kind === 'quarter' ? 4 : 8;
-        return t('division.withinHizb', { base, hizb: Math.floor((scope.number - 1) / per) + 1, within: ((scope.number - 1) % per) + 1, per });
+      const s = normalizeScope(scope) as typeof scope;
+      const base = divisionLabel(s.kind, s.number);
+      if (!index || !index.has(s.kind)) return base;
+      if (s.kind === 'quarter') {
+        return t('division.withinHizb', { base, hizb: Math.floor((s.number - 1) / 4) + 1, within: ((s.number - 1) % 4) + 1, per: 4 });
       }
       return base;
     }
@@ -74,7 +74,7 @@ export function reciterAttribution(r: ReciterSource): string {
 
 /** Localized, user-facing text for an error. Technical details stay as supplied. */
 export function errorText(e: unknown): string {
-  if (e instanceof DivisionUnavailableError) return e.kind === 'eighth' ? t('error.eighthsUnavailable') : t('error.divisionUnavailable', { kind: kindName(e.kind) });
+  if (e instanceof DivisionUnavailableError) return t('error.divisionUnavailable', { kind: kindName(e.kind) });
   if (e instanceof AudioUnavailableError) return t('error.offlineAudio');
   if (e instanceof TemplateError) return t('error.template', { detail: e.message });
   if (e instanceof BackupError) return t('error.backup', { detail: e.message });

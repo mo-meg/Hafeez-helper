@@ -10,7 +10,9 @@ const status = z.enum(MISTAKE_STATUSES);
 
 const ScopeSchema = z.union([
   z.object({ type: z.literal('all') }),
-  z.object({ type: z.literal('division'), kind: z.enum(['juz', 'hizb', 'quarter', 'eighth', 'page']), number: z.number().int().min(1) }),
+  // 'eighth' is accepted only from old backups and converted to its quarter (eighths were removed).
+  z.object({ type: z.literal('division'), kind: z.enum(['juz', 'hizb', 'quarter', 'eighth', 'page']), number: z.number().int().min(1) })
+    .transform((s) => (s.kind === 'eighth' ? { type: 'division' as const, kind: 'quarter' as const, number: Math.ceil(s.number / 2) } : { ...s, kind: s.kind as 'juz' | 'hizb' | 'quarter' | 'page' })),
   z.object({ type: z.literal('surahs'), surahs: z.array(z.number().int().min(1).max(114)).min(1) }),
   z.object({ type: z.literal('range'), start: RefSchema, end: RefSchema }),
 ]);

@@ -31,7 +31,7 @@ function perfTable(rows: readonly GroupPerformance[], label: (k: number) => stri
 export function progressView(app: App): Node {
   const d = dashboardData(app);
   const index = app.quran.index;
-  const kinds: Array<['surah' | DivisionKind, string]> = [['surah', t('common.surah')], ['juz', t('kind.juz')], ['hizb', t('kind.hizb')], ['quarter', t('kind.quarter')], ['eighth', t('kind.eighth')]];
+  const kinds: Array<['surah' | DivisionKind, string]> = [['surah', t('common.surah')], ['juz', t('kind.juz')], ['hizb', t('kind.hizb')], ['quarter', t('kind.quarter')]];
   if (groupBy !== 'surah' && !index.has(groupBy)) groupBy = 'surah';
   const rows = groupBy === 'surah' ? d.bySurah : (d.byDivision[groupBy] ?? []);
   const label = (k: number) => {

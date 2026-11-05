@@ -92,7 +92,7 @@ const setInput = (el: HTMLInputElement | HTMLSelectElement, value: string) => {
 
 async function makeApp(store: Store, audio: FakeAudio, root: HTMLElement): Promise<App> {
   const services = createServices({ store, clock: systemClock, ids: randomIds, fetcher: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
-  const app = new App({ services, audioBackend: audio, audioCache: new AudioCache(store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withEighths: true, withPages: true }) }, enableReminders: false });
+  const app = new App({ services, audioBackend: audio, audioCache: new AudioCache(store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withPages: true }) }, enableReminders: false });
   await app.start(root);
   return app;
 }
@@ -132,7 +132,6 @@ async function run() {
     check(text.includes('Al-Baqarah 2:253'), 'start 2:253 shown');
     check(text.includes("Al 'Imran 3:14"), 'end 3:14 shown');
     check($$('.sub-list li.quarter', panel).length === 4, 'four quarters listed');
-    check($$('.sub-list li.eighth', panel).length === 8, 'eight eighths listed');
     check(($$('.sub-list li.quarter', panel)[0]?.textContent ?? '').includes('2:253'), 'first quarter starts at 2:253');
   });
 
@@ -147,6 +146,39 @@ async function run() {
     btn?.click();
     await sleep(80);
     check(location.hash.startsWith('#/quran?quarter=18'), `navigated (${location.hash})`);
+    await go('#/quran?hizb=5');
+  });
+
+  await step('Quran browser: arrow opens last read, quick links and surah/page/juz/hizb lists', async () => {
+    await go('#/quran?hizb=5');
+    check(!$('.navigator'), 'old navigator panel removed');
+    const toggle = await waitFor(() => $<HTMLButtonElement>('[data-key="qb-toggle"]'), 'browser arrow');
+    check(toggle.getAttribute('aria-expanded') === 'false' && ($('#qb-panel') as HTMLElement).hidden, 'closed by default');
+    toggle.click();
+    const panel = await waitFor(() => (($('#qb-panel') as HTMLElement | null)?.hidden === false ? $('#qb-panel') : null), 'panel open');
+    check(byText('.qb-section-title', 'Last read', panel) && byText('.qb-section-title', 'Quick links', panel), 'last read and quick links sections');
+    check($$('.qb-chip[data-key^="qb-quick-"]', panel).length === 6, 'six quick links');
+    check($$('.qb-tab', panel).map((b) => b.textContent).join(',') === 'Surah,Page,Juz,Hizb', 'tabs in order');
+    check($('[data-key="qb-tab-hizb"]', panel)?.getAttribute('aria-selected') === 'true', 'hizb tab preselected for a hizb');
+    check($$('.qb-row', panel).length === 60, '60 hizb rows');
+    check($('.qb-row.current', panel)?.dataset.key === 'hizb-5', 'current hizb highlighted');
+    check(!!$('.qb-row[data-key="hizb-5"] .qb-w', panel)?.textContent, 'first words shown');
+    ($('[data-key="qb-tab-juz"]', panel) as HTMLButtonElement).click();
+    check($$('.qb-row', panel).length === 30, '30 juz rows');
+    ($('[data-key="qb-exp-juz-2"]', panel) as HTMLButtonElement).click();
+    check($$('.qb-row[data-key="juz-2"] .qb-sublist li', panel).length === 8, 'juz 2 expands to 8 quarters');
+    ($('[data-key="qb-tab-surah"]', panel) as HTMLButtonElement).click();
+    check($$('.qb-row', panel).length === 114, '114 surahs');
+    const search = $<HTMLInputElement>('[data-key="qb-search"]', panel) as HTMLInputElement;
+    search.value = 'kahf';
+    search.dispatchEvent(new Event('input'));
+    check($$('.qb-row', panel).length === 1 && $('.qb-row', panel)?.dataset.key === 's-18', 'search finds Al-Kahf');
+    search.value = '2:255';
+    search.dispatchEvent(new Event('input'));
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await sleep(80);
+    check(location.hash === '#/quran?surah=2&focus=262', `reference search navigates (${location.hash})`);
+    check(($('#qb-panel') as HTMLElement | null)?.hidden !== false, 'panel closes after choosing');
     await go('#/quran?hizb=5');
   });
 
@@ -421,7 +453,7 @@ async function run() {
     const bar = await waitFor(() => $('.autoscroll-bar'), 'auto-scroll bar');
     check(document.body.classList.contains('focus-reading'), 'focus mode on');
     check(getComputedStyle($('.division-panel') as HTMLElement).display === 'none', 'side panel hidden');
-    check(getComputedStyle($('.navigator') as HTMLElement).display === 'none', 'navigator hidden');
+    check(getComputedStyle($('.qb') as HTMLElement).display === 'none', 'browser bar hidden');
     const status = $('.as-status', bar) as HTMLElement;
     const long = $('.as-long', status)?.textContent ?? '';
     check(/^\d+ minutes? \| \d+$/.test(long), `status "${long}"`);
@@ -755,7 +787,7 @@ async function run() {
     await engine.init();
     const account: AccountController = { email: s.user.email, sync: engine, sessionEnded: false, onSessionEnded: () => {}, signOut: async () => {}, signInAgain: () => {}, deleteAccount: () => engine.deleteAccount(), changePassword: async () => {} };
     const services = createServices({ store: engine.store, clock: systemClock, ids: randomIds, fetcher: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
-    app = new App({ services, audioBackend: audio, audioCache: new AudioCache(engine.store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withEighths: true, withPages: true }) }, enableReminders: false, account });
+    app = new App({ services, audioBackend: audio, audioCache: new AudioCache(engine.store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withPages: true }) }, enableReminders: false, account });
     await app.start(root);
     await app.savePrefs({ ...app.prefs, language: 'en' });
     check(($('.account-mini .acct-email')?.textContent ?? '') === 'reader@example.com', 'email shown in the sidebar');
@@ -832,6 +864,15 @@ async function run() {
       }
     };
     requestAnimationFrame(meter);
+  } else if (showcase === 'quran-browser') {
+    await go('#/quran?hizb=5');
+    await app.setReadingPosition({ surah: 7, ayah: 23 });
+    await app.setReadingPosition({ surah: 5, ayah: 14 });
+    await app.setReadingPosition({ surah: 2, ayah: 253 });
+    (await waitFor(() => $<HTMLButtonElement>('[data-key="qb-toggle"]'), 'browser arrow')).click();
+    ($('[data-key="qb-tab-juz"]') as HTMLButtonElement | null)?.click();
+    ($('[data-key="qb-exp-juz-1"]') as HTMLButtonElement | null)?.click();
+    window.scrollTo(0, 0);
   } else if (showcase === 'auto-scroll') {
     await go('#/quran?hizb=5');
     (await waitFor(() => $<HTMLButtonElement>('[data-key="autoscroll-start"]'), 'auto-scroll button')).click();

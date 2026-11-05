@@ -251,7 +251,6 @@ th { color: var(--mist); font-weight: 600; font-size: 0.82rem; }
 /* ---------- Quran reader ---------- */
 .reader-layout { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1.25rem; align-items: start; }
 @media (max-width: 1150px) { .reader-layout { grid-template-columns: 1fr; } }
-.navigator { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: end; margin-bottom: 1rem; }
 .legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; align-items: center; font-size: 0.85rem; color: var(--mist); margin: 0 auto 0.75rem; max-width: 46rem; }
 .legend .swatch { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; vertical-align: -0.12em; margin-inline-end: 0.35rem; }
 .legend .swatch.marked { background: var(--mistake-soft); border-bottom: 2px solid var(--mistake); }
@@ -323,11 +322,73 @@ th { color: var(--mist); font-weight: 600; font-size: 0.82rem; }
 .sub-list button, .sub-list .btn { width: 100%; justify-content: space-between; border: 0; border-radius: 0; background: none; padding: 0.4rem 0.25rem; min-height: 2.25rem; text-align: start; }
 .sub-list button:hover:not(:disabled), .sub-list .btn:hover { background: var(--sunken); }
 .sub-list .start-words { font-family: var(--quran-font); direction: rtl; font-size: 1.1rem; color: var(--mist); }
-.sub-list .eighth button { padding-inline-start: 1.25rem; font-size: 0.9rem; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; font-size: 0.92rem; margin: 0.5rem 0; }
 .kv dt { color: var(--mist); }
 .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
 .step-links { margin: 0 auto 0.75rem; max-width: 46rem; }
+
+/* ---------- Quran browser (bar + panel at the top of the Quran section) ---------- */
+.qb { margin: 0 auto 0.5rem; max-width: 46rem; contain: inline-size; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-l); overflow: hidden; }
+.qb-h1 { margin: 0; font-size: inherit; font-weight: inherit; }
+.qb-head {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  border: 0; border-radius: 0; background: none; padding: 0.7rem 1rem; min-height: 3.5rem; text-align: start;
+}
+.qb-title { display: flex; flex-direction: column; min-width: 0; }
+.qb-label { font-size: 1.15rem; font-weight: 650; color: var(--ink); }
+.qb-range { color: var(--mist); font-size: 0.85rem; font-weight: 400; }
+.qb-chev { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 50%; background: var(--sunken); color: var(--accent); flex: none; }
+.qb-chev svg, .qb-exp svg { width: 1.25rem; height: 1.25rem; transition: transform 0.2s ease; }
+.qb.open .qb-chev svg, .qb-exp[aria-expanded='true'] svg { transform: rotate(180deg); }
+.qb-panel { border-top: 1px solid var(--line); }
+.qb-section-title { background: var(--sunken); padding: 0.55rem 1rem; font-size: 1rem; color: var(--ink); }
+.qb-chips { display: flex; gap: 0.6rem; overflow-x: auto; padding: 0.7rem 1rem; scrollbar-width: none; }
+.qb-chips::-webkit-scrollbar { display: none; }
+.qb-chip {
+  flex: none; display: inline-flex; align-items: center; min-height: 2.5rem; padding: 0.35rem 1.4rem; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.qb-chip:hover { background: var(--accent-soft); }
+.qb-empty { padding: 0.25rem 0; }
+.qb-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; background: var(--sunken); padding: 0.5rem 0.75rem; }
+.qb-tabs { display: flex; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; }
+.qb-tab { border: 0; background: transparent; border-radius: 999px; min-height: 2.5rem; padding: 0.3rem 1.1rem; color: var(--mist); font-weight: 600; }
+.qb-tab[aria-selected='true'] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.qb-search-wrap { flex: 1 1 12rem; display: flex; align-items: center; gap: 0.4rem; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 0 0.75rem; color: var(--mist); }
+.qb-search-wrap svg { width: 1.1rem; height: 1.1rem; flex: none; }
+.qb-search { flex: 1; min-width: 0; border: 0; background: transparent; min-height: 2.4rem; padding: 0; font: inherit; color: var(--ink); outline: none; }
+.qb-search-wrap:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+.qb-list { position: relative; max-height: min(60vh, 34rem); overflow-y: auto; overscroll-behavior: contain; }
+.qb-list > .qb-empty { padding: 1rem; }
+.qb-rows, .qb-sublist { list-style: none; margin: 0; padding: 0; }
+.qb-row + .qb-row { border-top: 1px solid var(--line); }
+.qb-go {
+  display: grid; grid-template-columns: auto 1fr; grid-template-areas: 't w' 's w'; align-items: center; column-gap: 1rem;
+  padding: 0.75rem 1rem; min-height: 4.25rem; color: inherit; text-decoration: none; cursor: pointer;
+}
+.qb-go:hover { background: var(--sunken); }
+.qb-row.current > .qb-go, .qb-go.current { background: var(--accent-soft); }
+.qb-tcell { grid-area: t; display: flex; align-items: center; gap: 0.25rem; }
+.qb-t { font-size: 1.1rem; font-weight: 650; color: var(--ink); text-decoration: none; }
+.qb-go.small .qb-t, .qb-go.small > .qb-t { grid-area: t; }
+.qb-s { grid-area: s; color: var(--mist); font-size: 0.9rem; }
+.qb-w { grid-area: w; justify-self: end; font-family: var(--quran-font); font-size: 1.45rem; line-height: 1.6; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; direction: rtl; }
+button.qb-exp { border: 0; background: transparent; width: 2.25rem; min-height: 2.25rem; color: var(--ink); border-radius: 50%; }
+button.qb-exp:hover:not(:disabled) { background: var(--surface); }
+.qb-sub { background: color-mix(in srgb, var(--sunken) 55%, var(--surface)); border-top: 1px solid var(--line); }
+.qb-sublist li + li { border-top: 1px solid var(--line); }
+.qb-go.small { min-height: 3.25rem; padding-block: 0.5rem; padding-inline-start: 2rem; }
+.qb-go.small .qb-t { font-size: 0.98rem; font-weight: 600; }
+.qb-go.small .qb-w { font-size: 1.2rem; }
+.qb-ayah { padding: 0.6rem 1rem 0.75rem; align-items: center; }
+.qb-ayah input { width: 6.5rem; }
+.quran-intro { max-width: 46rem; margin: 0 auto 0.75rem; font-size: 0.88rem; }
+@media (max-width: 520px) {
+  .qb { border-radius: var(--radius-m); }
+  .qb-w { font-size: 1.25rem; }
+  .qb-go { column-gap: 0.6rem; }
+}
 
 /* ---------- dialog ---------- */
 dialog { border: 1px solid var(--line); border-radius: var(--radius-l); padding: 0; background: var(--surface); color: var(--ink); width: min(34rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); }
@@ -433,7 +494,7 @@ body:has(.dock:not([hidden])) .autoscroll-fab { bottom: 5.5rem; }
 
 body.focus-reading .rail, body.focus-reading .topbar, body.focus-reading .dock, body.focus-reading .shell-notices,
 body.focus-reading .skip-link, body.focus-reading .autoscroll-fab, body.focus-reading main .page-head,
-body.focus-reading main .navigator, body.focus-reading main .notice, body.focus-reading main .step-links,
+body.focus-reading main .qb, body.focus-reading main .quran-intro, body.focus-reading main .notice, body.focus-reading main .step-links,
 body.focus-reading main .legend, body.focus-reading main .division-panel { display: none; }
 body.focus-reading .shell { grid-template-columns: 1fr; }
 /* Only vertical spacing changes here: the text keeps its exact width, so the lines are not
@@ -462,7 +523,7 @@ body.focus-reading.hafeez-hide main { padding-bottom: calc(50vh + 5rem + env(saf
 @keyframes just-marked { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mistake) 60%, transparent); } 100% { box-shadow: 0 0 0 0.5em transparent; } }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
-@media print { .rail, .dock, .navigator, .topbar, .autoscroll-fab, .autoscroll-bar { display: none; } .shell { display: block; } }
+@media print { .rail, .dock, .qb, .quran-intro, .topbar, .autoscroll-fab, .autoscroll-bar { display: none; } .shell { display: block; } }
 #app > p { padding: 2rem; }
 
 /* ---------- test ---------- */
