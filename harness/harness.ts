@@ -7,7 +7,8 @@
 import '../src/ui/styles.css';
 import { AudioCache } from '../src/browser/audioCache.ts';
 import { createIdbStore } from '../src/browser/idbStore.ts';
-import type { AudioBackend } from '../src/core/audio/playbackController.ts';
+import type { AudioBackend, CuePlayer } from '../src/core/audio/playbackController.ts';
+import type { CueKind } from '../src/core/playlist/sequence.ts';
 import { exportBackup, parseBackup, restoreBackup } from '../src/core/storage/backup.ts';
 import { createMemoryStore } from '../src/core/storage/memoryStore.ts';
 import { createServices } from '../src/core/services.ts';
@@ -54,6 +55,15 @@ class FakeAudio implements AudioBackend {
   onError() {}
 }
 
+/** Records orientation ticks instead of playing them. */
+class FakeCues implements CuePlayer {
+  readonly played: CueKind[] = [];
+  play(k: CueKind) {
+    this.played.push(k);
+  }
+}
+const cues = new FakeCues();
+
 const results: Array<{ name: string; ok: boolean; detail: string }> = [];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function waitFor<T>(fn: () => T | null | undefined | false, what: string, timeout = 4000): Promise<T> {
@@ -92,7 +102,7 @@ const setInput = (el: HTMLInputElement | HTMLSelectElement, value: string) => {
 
 async function makeApp(store: Store, audio: FakeAudio, root: HTMLElement): Promise<App> {
   const services = createServices({ store, clock: systemClock, ids: randomIds, fetcher: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
-  const app = new App({ services, audioBackend: audio, audioCache: new AudioCache(store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withPages: true }) }, enableReminders: false });
+  const app = new App({ services, audioBackend: audio, cues, audioCache: new AudioCache(store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withPages: true }) }, enableReminders: false });
   await app.start(root);
   return app;
 }
@@ -121,7 +131,9 @@ async function run() {
   });
 
   // The established journeys below drive the UI by its English labels; Arabic journeys follow later.
-  await app.savePrefs({ ...app.prefs, language: 'en', repeat: { ...app.prefs.repeat, pauseBetweenAyatMs: 0, pauseBetweenRepetitionsMs: 0 } });
+  check(app.prefs.cueGroupTick && app.prefs.cueMistakeTick, 'listening ticks are on by default');
+  // Ticks add real silences; the older journeys run without them (a dedicated journey covers them).
+  await app.savePrefs({ ...app.prefs, language: 'en', cueGroupTick: false, cueMistakeTick: false, repeat: { ...app.prefs.repeat, pauseBetweenAyatMs: 0, pauseBetweenRepetitionsMs: 0 } });
   check(document.documentElement.lang === 'en' && document.documentElement.dir === 'ltr', 'switched to English');
 
   await step('Opens Hizb 5 with verified boundaries (2:253 to 3:14)', async () => {
@@ -636,6 +648,55 @@ async function run() {
     session.setHafeez('off', false);
     session.stop();
     await app.savePrefs({ ...app.prefs, hafeezGhost: 7 });
+  });
+
+  await step('Listening ticks: Settings toggles, double tick per new mistake, single tick before the marked ayah', async () => {
+    await go('#/settings');
+    const box = (text: string) => byText('label.choice', text)?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const groupBox = await waitFor(() => box('Double tick when the next mistake starts (before its preceding ayat)'), 'group tick toggle');
+    const mistakeBox = await waitFor(() => box('Single tick right before the marked ayah itself'), 'mistake tick toggle');
+    check(byText('h3', 'Listening cues for mistakes'), 'section heading');
+    check(!groupBox.checked && !mistakeBox.checked, 'toggles reflect saved prefs');
+    groupBox.click();
+    await waitFor(() => app.prefs.cueGroupTick && box('Double tick when the next mistake starts (before its preceding ayat)')?.checked, 'group tick saved and re-rendered');
+    (await waitFor(() => box('Single tick right before the marked ayah itself'), 'mistake toggle after re-render')).click();
+    await waitFor(() => app.prefs.cueMistakeTick && box('Single tick right before the marked ayah itself')?.checked, 'mistake tick saved');
+    check(app.prefs.cueGroupTick && app.prefs.cueMistakeTick, 'both ticks on');
+    const assess = app.prefs.pauseForAssessment;
+    await app.savePrefs({ ...app.prefs, pauseForAssessment: false });
+    app.player.setPauseForAssessment(false);
+    try {
+      await go('#/revision');
+      (await waitFor(() => $<HTMLButtonElement>('[data-key="start-revision"]'), 'start revision')).click();
+      await waitFor(() => $('[data-key="start-session"]'), 'preview');
+      setInput(await waitFor(() => $<HTMLInputElement>('input[data-key="cfg-before"]'), 'ayat before'), '1');
+      setInput(await waitFor(() => $<HTMLInputElement>('input[data-key="cfg-ayah"]'), 'repeat input'), '2');
+      await sleep(60);
+      cues.played.length = 0;
+      const seen: string[] = [];
+      const unsub = app.player.subscribe((x) => setTimeout(() => seen.push(`${x.status}:${x.current?.cuesBefore.join('+') ?? '-'}:${(document.querySelector('.now-playing')?.textContent ?? '').slice(-40)}`), 0));
+      $<HTMLButtonElement>('[data-key="start-session"]')?.click();
+      await waitFor(() => app.player.state.status === 'cue', 'cue phase');
+      try {
+        await waitFor(() => (document.querySelector('main')?.textContent ?? '').includes('Next mistake…'), 'cue status shown');
+      } catch {
+        throw new Error(`cue status not shown; seen=${seen.slice(0, 8).join(' || ')}`);
+      }
+      await waitFor(() => app.player.state.status === 'finished', 'finished', 12000);
+      unsub();
+      const st = app.player.state.steps;
+      const expected = st.flatMap((x) => [...x.cuesBefore]);
+      check(st.length > 0 && st.every((x) => x.cuesBefore.includes('group') === (x.groupPass === 1 && x.itemIndex === 0 && x.repetition === 1)), 'group tick exactly at each new group');
+      check(st.every((x) => x.cuesBefore.includes('mistake') === (x.role === 'mistake' && x.repetition === 1)), 'mistake tick only before the first play of a marked ayah');
+      check(st[0]?.role === 'context' && st[0]?.cuesBefore.join() === 'group', 'group starts with its preceding ayah');
+      check(expected.filter((k) => k === 'group').length >= 2, 'at least two groups');
+      check(JSON.stringify(cues.played) === JSON.stringify(expected), `played ${cues.played.join(',')} expected ${expected.join(',')}`);
+    } finally {
+      app.player.stop();
+      if (app.active) await app.endSession(false);
+      await app.savePrefs({ ...app.prefs, pauseForAssessment: assess, cueGroupTick: false, cueMistakeTick: false });
+      app.player.setPauseForAssessment(assess);
+    }
   });
 
   await step('Every button and link has an accessible name on each page', async () => {

@@ -1,6 +1,6 @@
 import type { Mistake, RepeatConfig, SessionMode } from '../model.ts';
 import { buildMistakePlaylist, buildPortionPlaylist, type Playlist, type PlaylistOptions } from '../playlist/playlist.ts';
-import { concatSequences, expandSequence, type PlaybackStep } from '../playlist/sequence.ts';
+import { concatSequences, expandSequence, NO_CUES, type CueOptions, type PlaybackStep } from '../playlist/sequence.ts';
 import type { DivisionIndex } from '../quran/divisions.ts';
 import { scopeIntervals, type RevisionScope } from '../quran/scope.ts';
 
@@ -17,6 +17,11 @@ export interface SessionConfig {
   readonly reciterId: string;
 }
 
+export interface BuildOptions {
+  /** Orientation ticks for the mistakes phase (device preference, not part of the stored session). */
+  readonly cues?: CueOptions;
+}
+
 export interface BuiltSession {
   readonly mistakePlaylist: Playlist | null;
   readonly portionPlaylist: Playlist | null;
@@ -30,13 +35,13 @@ export interface BuiltSession {
  * full     → every ayah of the scope (portionAyahRepeat plays each);
  * combined → marked ayat first, then the full portion.
  */
-export function buildSession(config: SessionConfig, mistakes: readonly Mistake[], index: DivisionIndex): BuiltSession {
+export function buildSession(config: SessionConfig, mistakes: readonly Mistake[], index: DivisionIndex, opts: BuildOptions = {}): BuiltSession {
   const intervals = scopeIntervals(config.scope, index);
   const portionRepeat: RepeatConfig = { ...config.repeat, ayahRepeat: config.portionAyahRepeat, groupRepeat: 1, playlistRepeat: 1, repeatContext: true };
   const mp = config.mode === 'full' ? null : buildMistakePlaylist(mistakes, intervals, config.options);
   const pp = config.mode === 'mistakes' ? null : buildPortionPlaylist(mistakes, intervals);
   const parts: Array<{ steps: PlaybackStep[]; config: RepeatConfig }> = [];
-  if (mp) parts.push({ steps: expandSequence(mp, config.repeat, 'mistakes'), config: config.repeat });
+  if (mp) parts.push({ steps: expandSequence(mp, config.repeat, 'mistakes', opts.cues ?? NO_CUES), config: config.repeat });
   if (pp) parts.push({ steps: expandSequence(pp, portionRepeat, 'portion'), config: portionRepeat });
   return {
     mistakePlaylist: mp,

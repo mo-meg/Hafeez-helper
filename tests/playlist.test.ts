@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { RepeatConfig } from '../src/core/model.ts';
 import { buildMistakePlaylist, buildPortionPlaylist, playlistAyahCount } from '../src/core/playlist/playlist.ts';
-import { concatSequences, estimateDurationMs, expandSequence, playsPerAyah, RepeatConfigError } from '../src/core/playlist/sequence.ts';
+import { concatSequences, estimateDurationMs, expandSequence, playsPerAyah, RepeatConfigError, type PlaybackStep } from '../src/core/playlist/sequence.ts';
 import { DivisionIndex } from '../src/core/quran/divisions.ts';
 import { fromIndex, toIndex } from '../src/core/quran/refs.ts';
 import { scopeIntervals } from '../src/core/quran/scope.ts';
@@ -151,5 +151,52 @@ describe('repetition sequence', () => {
     const steps = expandSequence(buildMistakePlaylist(list, hizb5), cfg({ ayahRepeat: 1, pauseBetweenAyatMs: 1000 }));
     assert.equal(estimateDurationMs(steps, 1, null), 3 * 12_000 + 2 * 1000);
     assert.equal(estimateDurationMs(steps, 2, () => 8), 3 * 3000 + 2 * 1000);
+  });
+});
+
+describe('orientation cues (ticks between mistakes)', () => {
+  const both = { group: true, mistake: true };
+  const show = (steps: readonly PlaybackStep[]) => steps.map((s) => `${key(s.item.globalIndex)}${s.cuesBefore.length ? `[${s.cuesBefore.join('+')}]` : ''}`);
+
+  it('double tick at each new group, single tick before the marked ayah — only at changes', async () => {
+    const { list } = await scenario();
+    const p = buildMistakePlaylist(list, hizb5, { contextBefore: 1 });
+    const steps = expandSequence(p, cfg({ ayahRepeat: 2, groupRepeat: 2, playlistRepeat: 1 }), 'mistakes', both);
+    assert.deepEqual(show(steps).slice(0, 7), [
+      '2:254[group]', '2:255[mistake]', '2:255', // first pass of group 1
+      '2:254', '2:255[mistake]', '2:255', // second pass: no group tick, mistake tick again
+      '2:259[group]', // next group
+    ]);
+  });
+
+  it('a marked ayah without a preceding ayah gets both cues, group first', async () => {
+    const { list } = await scenario();
+    const steps = expandSequence(buildMistakePlaylist(list, hizb5), cfg({ ayahRepeat: 2 }), 'mistakes', both);
+    assert.deepEqual(show(steps), ['2:255[group+mistake]', '2:255', '2:260[group+mistake]', '2:260', '3:7[group+mistake]', '3:7']);
+  });
+
+  it('each toggle works on its own; default and portion phase have no cues', async () => {
+    const { list } = await scenario();
+    const p = buildMistakePlaylist(list, hizb5, { contextBefore: 1 });
+    assert.deepEqual(show(expandSequence(p, cfg({ ayahRepeat: 1 }), 'mistakes', { group: true, mistake: false })).slice(0, 3), ['2:254[group]', '2:255', '2:259[group]']);
+    assert.deepEqual(show(expandSequence(p, cfg({ ayahRepeat: 1 }), 'mistakes', { group: false, mistake: true })).slice(0, 3), ['2:254', '2:255[mistake]', '2:259']);
+    assert.ok(expandSequence(p, cfg()).every((s) => s.cuesBefore.length === 0));
+    assert.ok(expandSequence(buildPortionPlaylist(list, hizb5), cfg({ ayahRepeat: 1 }), 'portion', both).every((s) => s.cuesBefore.length === 0));
+  });
+
+  it('per-word practice: a single tick before each marked word of the same ayah', async () => {
+    const { list } = await scenario();
+    const p = buildMistakePlaylist(list, hizb5, { wordPractice: 'per_word' });
+    const steps = expandSequence(p, cfg({ ayahRepeat: 1 }), 'mistakes', both);
+    assert.deepEqual(show(steps).slice(0, 2), ['2:255[group+mistake]', '2:255[mistake]']);
+  });
+
+  it('combined revision keeps cues in the mistakes part only', async () => {
+    const { list } = await scenario();
+    const quarter = scopeIntervals({ type: 'range', start: { surah: 2, ayah: 253 }, end: { surah: 2, ayah: 256 } }, index);
+    const a = expandSequence(buildMistakePlaylist(list, quarter), cfg({ ayahRepeat: 1 }), 'mistakes', both);
+    const b = expandSequence(buildPortionPlaylist(list, quarter), cfg({ ayahRepeat: 1 }), 'portion', both);
+    const all = concatSequences([{ steps: a, config: cfg() }, { steps: b, config: cfg() }]);
+    assert.deepEqual(all.map((s) => s.cuesBefore.length), [2, 0, 0, 0, 0]);
   });
 });

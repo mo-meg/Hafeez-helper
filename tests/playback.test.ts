@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AudioUnavailableError, PlaybackController, type AudioBackend, type TimerApi } from '../src/core/audio/playbackController.ts';
+import { AudioUnavailableError, CUE_TIMING, cueDurationMs, PlaybackController, type AudioBackend, type CuePlayer, type TimerApi } from '../src/core/audio/playbackController.ts';
 import { BUILTIN_RECITERS, resolveAudioUrl, TemplateError, validateTemplate } from '../src/core/audio/reciters.ts';
 import type { RepeatConfig } from '../src/core/model.ts';
 import { buildMistakePlaylist } from '../src/core/playlist/playlist.ts';
-import { expandSequence, type PlaybackStep } from '../src/core/playlist/sequence.ts';
+import { expandSequence, type CueKind, type CueOptions, type PlaybackStep } from '../src/core/playlist/sequence.ts';
 import { setup } from './helpers.ts';
 
 /** Mock audio backend: records loads/plays; the test triggers "ended". */
@@ -63,11 +63,11 @@ const tick = () => new Promise((r) => setImmediate(r));
 const cfg = (o: Partial<RepeatConfig> = {}): RepeatConfig => ({ ayahRepeat: 3, groupRepeat: 1, playlistRepeat: 1, repeatContext: false, pauseBetweenRepetitionsMs: 1000, pauseBetweenAyatMs: 2000, playbackRate: 1, ...o });
 const TEMPLATE = 'https://audio.test/{surah3}{ayah3}.mp3';
 
-async function steps(c: RepeatConfig, context = 0): Promise<PlaybackStep[]> {
+async function steps(c: RepeatConfig, context = 0, cues?: CueOptions): Promise<PlaybackStep[]> {
   const { mistakes } = setup();
   await mistakes.markAyah({ surah: 2, ayah: 260 }, { category: 'other' });
   await mistakes.markAyah({ surah: 2, ayah: 255 }, { category: 'other' });
-  return expandSequence(buildMistakePlaylist(await mistakes.list(), [{ start: 1, end: 6236 }], { contextBefore: context }), c);
+  return expandSequence(buildMistakePlaylist(await mistakes.list(), [{ start: 1, end: 6236 }], { contextBefore: context }), c, 'mistakes', cues);
 }
 
 function make(s: PlaybackStep[]) {
@@ -261,5 +261,109 @@ describe('reciter URL templates', () => {
       assert.ok(r.attribution.length > 20);
     }
     assert.equal(BUILTIN_RECITERS.filter((r) => r.name.includes('Husary')).length >= 1, true);
+  });
+});
+
+class FakeCues implements CuePlayer {
+  played: CueKind[] = [];
+  primes = 0;
+  prime() {
+    this.primes++;
+  }
+  play(k: CueKind) {
+    this.played.push(k);
+  }
+}
+
+function makeWithCues(s: PlaybackStep[]) {
+  const backend = new FakeBackend();
+  const timers = new FakeTimers();
+  const cues = new FakeCues();
+  const player = new PlaybackController({ backend, timers, cues, resolveUrl: async (st) => resolveAudioUrl(TEMPLATE, st.item.ref) });
+  player.setSteps(s);
+  return { backend, timers, cues, player };
+}
+
+describe('playback controller — orientation cues', () => {
+  const both = { group: true, mistake: true };
+
+  it('plays tick-tick, then tick, with the agreed silences, while the ayah loads in parallel', async () => {
+    const { backend, timers, cues, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 1, both));
+    void player.start();
+    assert.equal(player.state.status, 'cue');
+    assert.ok(cues.primes > 0, 'cue player is primed inside the user gesture');
+    await tick();
+    assert.equal(backend.loads.length, 1, 'audio loads during the cue');
+    assert.equal(backend.plays, 0);
+    // Context ayah 2:254 starts the first group → double tick only.
+    assert.equal(timers.flush(), CUE_TIMING.group.leadMs);
+    assert.deepEqual(cues.played, ['group']);
+    assert.equal(timers.flush(), CUE_TIMING.group.soundMs + CUE_TIMING.group.tailMs);
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    assert.deepEqual(player.state.current?.item.ref, { surah: 2, ayah: 254 });
+    // Context ends → normal ayah pause → single tick right before the marked ayah.
+    backend.end();
+    assert.equal(timers.flush(), 2000);
+    await tick();
+    assert.equal(player.state.status, 'cue');
+    assert.deepEqual(cues.played, ['group', 'mistake'], 'mistake tick has no lead silence');
+    assert.equal(timers.flush(), CUE_TIMING.mistake.soundMs + CUE_TIMING.mistake.tailMs);
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    assert.deepEqual(player.state.current?.item.ref, { surah: 2, ayah: 255 });
+  });
+
+  it('adds about one second around a new group and nothing on plain repetitions', async () => {
+    assert.ok(cueDurationMs(['group']) >= 1000);
+    const { backend, timers, cues, player } = makeWithCues(await steps(cfg({ ayahRepeat: 2 }), 0, { group: false, mistake: true }));
+    void player.start();
+    await tick();
+    timers.flush();
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    backend.end();
+    timers.flush(); // repetition pause
+    await tick();
+    assert.equal(player.state.status, 'playing', 'second repetition starts without a cue');
+    assert.deepEqual(cues.played, ['mistake']);
+  });
+
+  it('pausing during a cue cancels it; resuming replays the cue', async () => {
+    const { timers, cues, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 0, both));
+    void player.start();
+    await tick();
+    timers.flush();
+    player.pause();
+    assert.equal(player.state.status, 'paused');
+    assert.equal(timers.pending.length, 0);
+    void player.play();
+    assert.equal(player.state.status, 'cue');
+    timers.flush();
+    assert.deepEqual(cues.played, ['group', 'group']);
+  });
+
+  it('retry after an audio error does not replay the cue', async () => {
+    const s = await steps(cfg({ ayahRepeat: 1 }), 0, both);
+    const { backend, timers, cues, player } = makeWithCues(s);
+    backend.failUrls.add('https://audio.test/002255.mp3');
+    void player.start();
+    await tick();
+    while (timers.pending.length) timers.flush();
+    await tick();
+    assert.equal(player.state.status, 'error');
+    const before = cues.played.length;
+    backend.failUrls.clear();
+    await player.retry();
+    assert.equal(player.state.status, 'playing');
+    assert.equal(cues.played.length, before);
+  });
+
+  it('without a cue player, cue-marked steps play immediately (no silent delay)', async () => {
+    const { timers, player } = make(await steps(cfg({ ayahRepeat: 1 }), 0, both));
+    await player.start();
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    assert.equal(timers.pending.length, 0);
   });
 });
