@@ -450,6 +450,9 @@ body.hafeez-hide .quran .pause-mark.hz-h {
   color: color-mix(in srgb, var(--ink) var(--hafeez-ghost, 7%), transparent); background: none;
   text-decoration-color: transparent; pointer-events: none;
 }
+/* The page must be able to scroll until its last line reaches the middle of the screen, otherwise
+   the lines in the bottom half stay hidden forever (and the "continue?" prompt shows over ghosts). */
+body.focus-reading.hafeez-hide main { padding-bottom: calc(50vh + 5rem + env(safe-area-inset-bottom)); }
 .hafeez-line {
   position: fixed; inset-inline: 0; height: 0; z-index: 40; pointer-events: none;
   border-top: 1.5px dashed color-mix(in srgb, var(--gilt) 55%, transparent);

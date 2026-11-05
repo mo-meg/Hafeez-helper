@@ -1,6 +1,6 @@
 import { isUnresolved, suggestedCategory, type Mistake } from '../../core/model.ts';
 import { DivisionUnavailableError } from '../../core/quran/divisions.ts';
-import { nextPortion, portionQuery, type NextPortion } from '../../core/reading/autoScroll.ts';
+import { nextPortion, portionQuery, previousPortion, type NextPortion } from '../../core/reading/autoScroll.ts';
 import { fromIndex, surahEndIndex, surahStartIndex, toIndex } from '../../core/quran/refs.ts';
 import { SURAHS, surahInfo } from '../../core/quran/surahs.ts';
 import type { AyahRef, DivisionKind, DivisionRange } from '../../core/quran/types.ts';
@@ -441,7 +441,48 @@ function nextName(p: NextPortion): string {
 
 function portionInfo(app: App, range: ViewRange): PortionInfo {
   const n = nextPortion(range, (k) => app.quran.index.count(k));
-  return { label: portionName(range), next: n ? { hash: `#/quran?${portionQuery(n)}`, label: nextName(n) } : null };
+  const p = previousPortion(range);
+  return {
+    label: portionName(range),
+    next: n ? { hash: `#/quran?${portionQuery(n)}`, label: nextName(n) } : null,
+    prev: p ? { hash: `#/quran?${portionQuery(p)}`, label: nextName(p) } : null,
+  };
+}
+
+/**
+ * Horizontal swipe on the Quran page (normal reading and focus/Hafeez mode) moves between portions.
+ * The Quran reads right to left, so swiping right turns to the next portion and swiping left goes back.
+ */
+let swipeApp: App | null = null;
+let swipeInfo: PortionInfo | null = null;
+let swipeInstalled = false;
+function installSwipe(app: App): void {
+  swipeApp = app;
+  if (swipeInstalled) return;
+  swipeInstalled = true;
+  let x0 = 0, y0 = 0, t0 = 0, tracking = false;
+  window.addEventListener('touchstart', (e) => {
+    const target = e.target as HTMLElement | null;
+    tracking = e.touches.length === 1 && !target?.closest('input, textarea, select, dialog, .table-wrap, .autoscroll-bar');
+    if (!tracking) return;
+    const t1 = e.touches[0] as Touch;
+    x0 = t1.clientX; y0 = t1.clientY; t0 = Date.now();
+  }, { passive: true });
+  window.addEventListener('touchend', (e) => {
+    if (!tracking) return;
+    tracking = false;
+    const a = swipeApp, info = swipeInfo, t1 = e.changedTouches[0];
+    if (!a || !info || !t1 || a.route.name !== 'quran' || document.querySelector('dialog[open]')) return;
+    const dx = t1.clientX - x0, dy = t1.clientY - y0;
+    if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - t0 > 800) return;
+    const dest = dx > 0 ? info.next : info.prev;
+    if (!dest) {
+      a.toast(t(dx > 0 ? 'auto.swipeEnd' : 'auto.swipeStart'));
+      return;
+    }
+    if (a.autoScroll?.active) a.autoScroll.goToPortion(dest.hash);
+    else a.navigate(dest.hash);
+  }, { passive: true });
 }
 
 /** Floating button that starts auto-scroll focus mode from the current position. */
@@ -463,7 +504,9 @@ export function quranView(app: App): Node {
   const hasText = !!app.quran.text;
   const body = hasText ? textBody(app, range, maps) : refOnlyBody(app, range, maps);
   const mushaf = h('article', { class: 'mushaf', 'aria-label': t('quran.textLabel') }, body);
-  app.autoScroll?.setPortion(portionInfo(app, range));
+  swipeInfo = portionInfo(app, range);
+  installSwipe(app);
+  app.autoScroll?.setPortion(swipeInfo);
 
   // Scroll to a requested ayah and track the reading position while scrolling.
   const focus = Number(app.route.params.get('focus') ?? NaN);
