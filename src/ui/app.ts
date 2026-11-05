@@ -27,6 +27,9 @@ import { sessionView } from './views/session.ts';
 import { settingsView } from './views/settings.ts';
 import { testView, type ActiveTest } from './views/test.ts';
 
+const RECENT_KEY = 'recentReads';
+const RECENT_MAX = 6;
+
 export interface AppDeps {
   readonly services: AppServices;
   readonly audioBackend: AudioBackend;
@@ -87,6 +90,8 @@ export class App {
   active: ActiveSession | null = null;
   test: ActiveTest | null = null;
   readingPosition: AyahRef | null = null;
+  /** Recently read places, newest first, one per surah (kept on this device). */
+  recentReads: AyahRef[] = [];
   /** Quran auto-scroll focus mode, while it is on. */
   autoScroll: AutoScrollSession | null = null;
   private main!: HTMLElement;
@@ -113,6 +118,7 @@ export class App {
     this.prefs = await this.s.preferences.load();
     this.quran = this.deps.fixture ? this.s.quran.useFixture(this.deps.fixture.text, this.deps.fixture.divisions) : await this.s.quran.init();
     this.readingPosition = (await this.s.store.settings.get<AyahRef>('readingPosition')) ?? null;
+    this.recentReads = (await this.s.store.settings.get<AyahRef[]>(RECENT_KEY).catch(() => null)) ?? [];
     await this.reloadData();
     this.applyAppearance();
     this.buildShell(root);
@@ -363,7 +369,9 @@ export class App {
 
   async setReadingPosition(ref: AyahRef): Promise<void> {
     this.readingPosition = ref;
+    this.recentReads = [ref, ...this.recentReads.filter((r) => r.surah !== ref.surah)].slice(0, RECENT_MAX);
     await this.s.store.settings.set('readingPosition', ref);
+    await this.s.store.settings.set(RECENT_KEY, this.recentReads).catch(() => undefined);
   }
 
   // ---------------------------------------------------------------- sessions

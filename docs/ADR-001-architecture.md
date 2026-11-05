@@ -35,8 +35,7 @@ Constraints of the build environment used for the first implementation:
    30 juz starts, hizb 1–11 starts, with citations) and uses them to *reject* any downloaded
    dataset that disagrees.
 5. **Division boundaries are derived from per-ayah metadata**, never from arithmetic.
-   Eighths (thumn) are not part of the Hafs/Madani metadata; they are supported through an
-   importable, validated division dataset (see `docs/DATA_SOURCES.md`).
+   Eighths (thumn) are not part of the Hafs/Madani metadata and are not offered by the app.
 6. **The Quran.com/Quran Foundation API is not used from the browser.** Its current Content APIs
    require OAuth2 client credentials, which cannot be kept secret in a client-only app. Word
    references therefore use the position of a whitespace-delimited word token in the stored

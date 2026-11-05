@@ -18,8 +18,8 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   the device. The Quran text is always shown exactly as supplied by the verified source.
 * **Quran reader** with the KFGQPC Hafs V30 Uthmani text in its own KFGQPC Hafs font, right-to-left,
   adjustable size, light and dark themes.
-  Navigate by surah, ayah, juz, hizb, quarter, eighth (if imported) and page. A division panel
-  shows the exact start and end of the portion, its quarters and eighths with their starting
+  Navigate by surah, ayah, juz, hizb, quarter and page. A division panel
+  shows the exact start and end of the portion, its quarters with their starting
   ayat, your reading position, and how many mistakes are marked, unresolved and resolved there.
 * **Mistake marking**: tap a word, or an ayah number for the whole ayah. Choose a type (forgotten,
   hesitation, incorrect word, similar ayah, ayah ending, tajweed, other), severity, confidence,
@@ -27,7 +27,7 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   *Linking ayat (transition)*, because the difficulty is usually connecting the previous ayah to it. Marking the same place again records a recurrence instead
   of a duplicate. Lifecycle: new, needs practice, under review, improved, resolved, reopened;
   resolved mistakes stay in your history.
-* **Personal audio revision**: today's hizb (or any juz, quarter, eighth, page, surahs, ayah range,
+* **Personal audio revision**: today's hizb (or any juz, quarter, page, surahs, ayah range,
   date range, type or status) becomes a playlist of only the relevant unresolved ayat, sorted in
   Quran order, one entry per ayah even when several words are marked. Settings: reciter, total
   plays per ayah, passes per group and per playlist, pauses, speed, neighbouring ayat, word
@@ -51,7 +51,7 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   memorization plan, and local reminders (in-app notification and a calendar `.ics`).
 * **Dashboard and progress**: unresolved, resolved and returning mistakes, ayat recalled today,
   streak, a transparent *estimated revision quality* score with its formula, 30-day trend,
-  performance by surah, juz, hizb, quarter and eighth, ayat needing most practice, ayat not
+  performance by surah, juz, hizb and quarter, ayat needing most practice, ayat not
   reviewed recently, due and upcoming reviews.
 * **Privacy and data**: backup/restore (merge or replace), demo data that is clearly labelled and
   removable, delete-everything, offline app shell, optional offline audio.
@@ -119,7 +119,7 @@ No environment variables or secrets are needed (`.env.example` lists the optiona
 src/
   core/                 platform-independent domain logic (no DOM; enforced by lint)
     quran/              surahs, verified anchors, references, divisions, validation, scopes, text, tokenizer
-    data/               AlQuran.cloud and Tanzil parsers, data service, eighths import
+    data/               AlQuran.cloud and Tanzil parsers, data service
     mistakes/           mistake service (marking, dedupe, lifecycle, reviews), filters
     review/             review policy, scheduler, quality score
     test/               recall-test cards (what to show, what to hide), hints, allowed answers
@@ -163,7 +163,7 @@ add your own with a URL template such as `https://host/path/{surah3}{ayah3}.mp3`
 
 ## Known limitations
 
-* **Eighths (thumn)** are not in the Madani/Hafs metadata; they work after importing a verified list.
+* **Eighths (thumn)** are not in the Madani/Hafs metadata and are not offered.
 * **Word-level audio** (starting playback at a marked word) is not available: no verified word timings are integrated, so the whole ayah plays and the app says so.
 * **Word references** are positions in the stored Tanzil edition, not Quran.com word IDs.
 * **Reminders** fire only while the app is open; use the calendar file for reliable reminders.

@@ -61,25 +61,9 @@ including agreement with the loaded text's structure.
 
 ### Eighths (thumn)
 
-Eighths are a Maghrebi division and are **not** part of the Madani/Hafs metadata published by
-Tanzil, AlQuran.cloud or Quran.com. The only verified eighth dataset found during research
-([nuralhifz-data](https://github.com/smartmaker-devs/nuralhifz-data), CC BY 4.0) uses Warsh
-numbering (6214 ayat) and some eighths start mid-ayah, so it cannot be combined with Hafs text.
-
-The app therefore supports eighths through **import** (Settings, Quran text and divisions):
-
-```json
-{
-  "label": "My mushaf's eighths",
-  "source": { "name": "…", "url": "…", "license": "…" },
-  "eighthStarts": [[1, 1], [2, 1], ...]
-}
-```
-
-Also accepted: a bare array of `[surah, ayah]`, of `{ "surah", "ayah" }`, or of
-`{ "start": { "surah", "ayah" } }`. Exactly 480 entries in mushaf order, using the same ayah
-numbering as the loaded text; every odd eighth must coincide with a quarter start, otherwise
-the file is rejected with an explanation.
+Eighths are a Maghrebi division and are **not** part of the Madani/Hafs metadata used here.
+The app does not offer them (an earlier import option was removed, November 2026). Plans,
+playlists and backups that still mention an eighth are read as the quarter that contains it.
 
 ## Why not the Quran.com API
 

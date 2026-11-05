@@ -2,7 +2,7 @@ import { isUnresolved, suggestedCategory, type Mistake } from '../../core/model.
 import { DivisionUnavailableError } from '../../core/quran/divisions.ts';
 import { nextPortion, portionQuery, previousPortion, type NextPortion } from '../../core/reading/autoScroll.ts';
 import { fromIndex, surahEndIndex, surahStartIndex, toIndex } from '../../core/quran/refs.ts';
-import { SURAHS, surahInfo } from '../../core/quran/surahs.ts';
+import { surahInfo } from '../../core/quran/surahs.ts';
 import type { AyahRef, DivisionKind, DivisionRange } from '../../core/quran/types.ts';
 import { DEFAULT_PREFERENCES } from '../../core/settings/preferences.ts';
 import type { App } from '../app.ts';
@@ -10,11 +10,12 @@ import { AutoScrollSession, type PortionInfo } from '../components/autoScroll.ts
 import { openDialog } from '../components/dialog.ts';
 import { icon } from '../components/icons.ts';
 import { openMarkDialog, statusChip } from '../components/markDialog.ts';
+import { quranBrowser } from '../components/quranBrowser.ts';
 import { arabicDigits, h, type Child } from '../dom.ts';
 import { dir, fmtNum, t, tn } from '../i18n/index.ts';
-import { categoryLabel, divisionLabel, errorText, kindName, refLabel, surahName, surahOption } from '../i18n/labels.ts';
+import { categoryLabel, divisionLabel, errorText, kindName, refLabel, surahName } from '../i18n/labels.ts';
 
-const KINDS: DivisionKind[] = ['juz', 'hizb', 'quarter', 'eighth', 'page'];
+const KINDS: DivisionKind[] = ['juz', 'hizb', 'quarter', 'page'];
 
 interface ViewRange {
   readonly start: number;
@@ -53,50 +54,6 @@ function mistakeMaps(mistakes: readonly Mistake[]) {
   return { byWord, byAyah };
 }
 
-function navigator(app: App, range: ViewRange): HTMLElement {
-  const index = app.quran.index;
-  const go = (q: string) => app.navigate(`#/quran?${q}`);
-  const surahSel = h(
-    'select',
-    { id: 'nav-surah', onchange: () => surahSel.value && go(`surah=${surahSel.value}`) },
-    range.surah === null ? h('option', { value: '', selected: true }, t('common.choose')) : null,
-    SURAHS.map((s) => h('option', { value: String(s.number), selected: range.surah === s.number }, surahOption(s.number))),
-  );
-  const ayahInput = h('input', { id: 'nav-ayah', type: 'number', min: '1', placeholder: t('quran.ayahPlaceholder'), style: { width: '5.5rem' } });
-  const goAyah = () => {
-    const s = Number(surahSel.value);
-    const a = Number(ayahInput.value);
-    if (!Number.isInteger(a) || a < 1 || a > surahInfo(s).ayahCount) {
-      app.toast(t('quran.ayahCount', { name: surahName(s), count: surahInfo(s).ayahCount }), 'error');
-      return;
-    }
-    go(`surah=${s}&focus=${toIndex({ surah: s, ayah: a })}`);
-  };
-  const divisionSelect = (kind: DivisionKind) => {
-    const n = index.count(kind);
-    const current = range.division?.kind === kind ? range.division.number : null;
-    const label = (i: number) => {
-      if (kind === 'quarter') return t('division.optionQuarter', { n: i, hizb: Math.ceil(i / 4), within: ((i - 1) % 4) + 1 });
-      if (kind === 'eighth') return t('division.optionEighth', { n: i, hizb: Math.ceil(i / 8), within: ((i - 1) % 8) + 1 });
-      return fmtNum(i);
-    };
-    const sel = h(
-      'select',
-      { id: `nav-${kind}`, disabled: n === 0, onchange: () => go(`${kind}=${sel.value}`) },
-      h('option', { value: '' }, n === 0 ? t('common.notLoaded') : t('common.choose')),
-      Array.from({ length: n }, (_, i) => h('option', { value: String(i + 1), selected: current === i + 1 }, label(i + 1))),
-    );
-    return h('label', { class: 'field' }, h('span', null, kindName(kind)), sel);
-  };
-  return h(
-    'div',
-    { class: 'navigator panel' },
-    h('label', { class: 'field' }, h('span', null, t('common.surah')), surahSel),
-    h('label', { class: 'field' }, h('span', null, t('common.ayah')), h('div', { class: 'row' }, ayahInput, h('button', { type: 'button', onclick: goAyah }, t('common.go')))),
-    KINDS.map(divisionSelect),
-  );
-}
-
 function stepLinks(app: App, range: ViewRange): HTMLElement {
   const d = range.division;
   if (d) {
@@ -119,7 +76,7 @@ function stepLinks(app: App, range: ViewRange): HTMLElement {
   );
 }
 
-/** Marker shown inside the text where a quarter/eighth/hizb starts. */
+/** Marker shown inside the text where a juz, hizb or quarter starts. */
 function divisionMarker(app: App, idx: number): HTMLElement | null {
   const index = app.quran.index;
   const startsAt = (kind: DivisionKind) => {
@@ -129,12 +86,10 @@ function divisionMarker(app: App, idx: number): HTMLElement | null {
   const juz = startsAt('juz');
   const hizb = startsAt('hizb');
   const quarter = startsAt('quarter');
-  const eighth = startsAt('eighth');
   const parts: string[] = [];
   if (juz) parts.push(t('division.markerJuz', { n: juz }));
   if (hizb) parts.push(t('division.markerHizb', { n: hizb }));
   else if (quarter) parts.push(t('division.markerQuarter', { hizb: Math.ceil(quarter / 4), q: ((quarter - 1) % 4) + 1 }));
-  else if (eighth) parts.push(t('division.markerEighth', { hizb: Math.ceil(eighth / 8), e: ((eighth - 1) % 8) + 1 }));
   return parts.length ? h('span', { class: 'division-marker', role: 'note', dir: dir() }, parts.join(t('common.listSep'))) : null;
 }
 
@@ -365,24 +320,13 @@ function divisionPanel(app: App, range: ViewRange): HTMLElement {
   };
 
   let subs: Child = null;
-  if (d && (d.kind === 'hizb' || d.kind === 'juz' || d.kind === 'quarter')) {
-    const quarters = d.kind === 'quarter' ? [] : index.children(d, 'quarter');
-    const eighthsOf = (q: DivisionRange) => index.children(q, 'eighth');
-    const items: HTMLElement[] = [];
-    if (d.kind === 'quarter') {
-      for (const e of eighthsOf(d)) items.push(subItem(e, 'eighth', t('division.eighthOfHizb', { e: ((e.number - 1) % 8) + 1, hizb: Math.ceil(e.number / 8) })));
-    } else {
-      for (const q of quarters) {
-        items.push(subItem(q, 'quarter', t('division.quarterOfHizb', { q: ((q.number - 1) % 4) + 1, hizb: Math.ceil(q.number / 4) })));
-        for (const e of eighthsOf(q)) items.push(subItem(e, 'eighth', t('division.eighthN', { e: ((e.number - 1) % 8) + 1 })));
-      }
-    }
+  if (d && (d.kind === 'hizb' || d.kind === 'juz')) {
+    const items = index.children(d, 'quarter').map((q) => subItem(q, 'quarter', t('division.quarterOfHizb', { q: ((q.number - 1) % 4) + 1, hizb: Math.ceil(q.number / 4) })));
     subs = h(
       'div',
       null,
       h('h3', { style: { 'margin-top': '1rem' } }, t('quran.subdivisions')),
       items.length ? h('ul', { class: 'sub-list' }, items) : h('p', { class: 'muted' }, t('quran.noQuarters')),
-      !index.has('eighth') ? h('p', { class: 'muted', style: { 'margin-top': '0.5rem' } }, t('quran.noEighths')) : null,
     );
   }
 
@@ -533,13 +477,13 @@ export function quranView(app: App): Node {
   return h(
     'div',
     null,
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, t('quran.title')), h('p', { class: 'muted' }, t('quran.intro')))),
+    quranBrowser(app, { surah: range.surah, division: range.division, startIndex: range.start, endIndex: range.end, label: portionName(range) }),
+    h('p', { class: 'muted quran-intro' }, t('quran.intro')),
     h('span', { id: 'marked-desc', class: 'sr-only' }, t('quran.markedDesc')),
     problem ? h('div', { class: 'notice warn', role: 'alert' }, problem) : null,
     !hasText
       ? h('div', { class: 'notice info' }, h('p', null, t('quran.noText')), h('a', { class: 'btn', href: '#/settings?section=data', 'data-key': 'download-data' }, t('common.downloadQuranData')))
       : null,
-    navigator(app, range),
     h('div', { class: 'reader-layout' }, h('div', null, stepLinks(app, range), legend(), mushaf), divisionPanel(app, range)),
     hasText ? autoScrollButton(app, range) : null,
   );

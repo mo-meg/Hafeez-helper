@@ -14,9 +14,6 @@ export interface DivisionDataset {
   readonly source: { readonly name: string; readonly url: string; readonly license: string; readonly retrievedAt?: string };
   readonly juzStarts: StartList;
   readonly quarterStarts?: StartList;
-  readonly eighthStarts?: StartList;
-  /** Provenance of eighthStarts when imported separately from the rest of the dataset. */
-  readonly eighthsSource?: { readonly name: string; readonly url: string; readonly license: string };
   readonly pageStarts?: StartList;
   /** True only for synthetic test fixtures (never shown as real boundaries). */
   readonly synthetic?: boolean;
@@ -26,18 +23,13 @@ export const EXPECTED_COUNTS: Readonly<Record<DivisionKind, number>> = {
   juz: 30,
   hizb: 60,
   quarter: 240,
-  eighth: 480,
   page: 604,
 };
 
 export class DivisionUnavailableError extends Error {
   readonly kind: DivisionKind;
   constructor(kind: DivisionKind) {
-    super(
-      kind === 'eighth'
-        ? 'Eighth (thumn) boundaries are not part of the loaded division dataset. Import a verified eighths dataset in Settings.'
-        : `${kind} boundaries are not available yet. Download the Quran data in Settings → Quran data.`,
-    );
+    super(`${kind} boundaries are not available yet. Download the Quran data in Settings → Quran data.`);
     this.name = 'DivisionUnavailableError';
     this.kind = kind;
   }
@@ -70,7 +62,6 @@ export class DivisionIndex {
       quarter: quarters,
       // A hizb is by definition four quarters; its start is the start of quarter 4k+1.
       hizb: quarters?.filter((_, i) => i % 4 === 0),
-      eighth: toIdx(dataset.eighthStarts),
       page: toIdx(dataset.pageStarts),
     };
   }
@@ -121,7 +112,6 @@ export class DivisionIndex {
   locate(ref: AyahRef): AyahLocation {
     const index = toIndex(ref);
     const quarter = this.numberAt('quarter', index);
-    const eighth = this.numberAt('eighth', index);
     return {
       ref,
       index,
@@ -129,8 +119,6 @@ export class DivisionIndex {
       hizb: this.numberAt('hizb', index),
       quarter,
       quarterInHizb: quarter === null ? null : ((quarter - 1) % 4) + 1,
-      eighth,
-      eighthInHizb: eighth === null ? null : ((eighth - 1) % 8) + 1,
       page: this.numberAt('page', index),
     };
   }

@@ -10,6 +10,17 @@ export type RevisionScope =
   | { readonly type: 'surahs'; readonly surahs: readonly number[] }
   | { readonly type: 'range'; readonly start: AyahRef; readonly end: AyahRef };
 
+/**
+ * Eighths (thumn) were removed from the app. Plans, playlists and backups saved before that may
+ * still hold `{ kind: 'eighth' }`; such a scope is read as the quarter that contains it.
+ */
+export function normalizeScope(scope: RevisionScope): RevisionScope {
+  if (scope.type === 'division' && (scope.kind as string) === 'eighth') {
+    return { type: 'division', kind: 'quarter', number: Math.ceil(scope.number / 2) };
+  }
+  return scope;
+}
+
 /** Inclusive global-index interval. */
 export interface IndexInterval {
   readonly start: number;
@@ -20,7 +31,6 @@ const KIND_LABEL: Record<DivisionKind, string> = {
   juz: 'Juz',
   hizb: 'Hizb',
   quarter: 'Quarter',
-  eighth: 'Eighth (Thumn)',
   page: 'Page',
 };
 
@@ -29,7 +39,8 @@ export function kindLabel(kind: DivisionKind): string {
 }
 
 /** Resolves a scope into sorted, non-overlapping intervals of global ayah indexes. */
-export function scopeIntervals(scope: RevisionScope, index: DivisionIndex): IndexInterval[] {
+export function scopeIntervals(input: RevisionScope, index: DivisionIndex): IndexInterval[] {
+  const scope = normalizeScope(input);
   switch (scope.type) {
     case 'all':
       return [{ start: 1, end: TOTAL_AYAT }];
@@ -75,11 +86,10 @@ export function describeScope(scope: RevisionScope, index?: DivisionIndex): stri
     case 'division': {
       const base = `${kindLabel(scope.kind)} ${scope.number}`;
       if (!index || !index.has(scope.kind)) return base;
-      if (scope.kind === 'quarter' || scope.kind === 'eighth') {
-        const per = scope.kind === 'quarter' ? 4 : 8;
-        const hizb = Math.floor((scope.number - 1) / per) + 1;
-        const within = ((scope.number - 1) % per) + 1;
-        return `${base} (Hizb ${hizb}, ${within}/${per})`;
+      if (scope.kind === 'quarter') {
+        const hizb = Math.floor((scope.number - 1) / 4) + 1;
+        const within = ((scope.number - 1) % 4) + 1;
+        return `${base} (Hizb ${hizb}, ${within}/4)`;
       }
       return base;
     }

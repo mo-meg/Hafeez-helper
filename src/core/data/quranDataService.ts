@@ -4,7 +4,6 @@ import { QuranText, type QuranTextDataset } from '../quran/text.ts';
 import { TOTAL_AYAT } from '../quran/surahs.ts';
 import type { KeyValue } from '../storage/store.ts';
 import { ALQURAN_CLOUD, DataFormatError, diffStartLists, parseAlQuranCloudFullQuran, parseAlQuranCloudMeta } from './alquranCloud.ts';
-import { parseEighthsFile, withEighths } from './eighthsImport.ts';
 
 export type Fetcher = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
@@ -172,26 +171,6 @@ export class QuranDataService {
       if (diffs.length) throw new DataFormatError(`Downloaded divisions disagree with the loaded dataset: ${diffs.slice(0, 3).join(', ')}`);
     }
     return this.activate(this.current.text?.dataset ?? null, parsed.divisions, 'download');
-  }
-
-  async importEighths(json: unknown): Promise<QuranDataState> {
-    if (!this.current.divisions.quarterStarts) throw new DataFormatError('Load the Quran division data before importing eighths.');
-    const base: DivisionDataset = { ...this.current.divisions };
-    delete (base as { eighthStarts?: unknown }).eighthStarts;
-    const { dataset, validation } = withEighths(base, parseEighthsFile(json));
-    if (!validation.ok) throw new DataFormatError(validation.errors.slice(0, 3).join(' '));
-    const state = this.activate(this.current.text?.dataset ?? null, dataset, this.current.origin);
-    await this.cache.set(KEY_DIVISIONS, dataset);
-    return state;
-  }
-
-  async removeEighths(): Promise<QuranDataState> {
-    const d: DivisionDataset = { ...this.current.divisions };
-    delete (d as { eighthStarts?: unknown }).eighthStarts;
-    delete (d as { eighthsSource?: unknown }).eighthsSource;
-    const state = this.activate(this.current.text?.dataset ?? null, d, this.current.origin);
-    await this.cache.set(KEY_DIVISIONS, d);
-    return state;
   }
 
   /** Clears cached copies, then reloads the dataset shipped with the app. */
