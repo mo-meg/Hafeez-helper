@@ -39,6 +39,10 @@ export const PreferencesSchema = z.object({
   wordPractice: z.enum(['grouped', 'per_word']),
   categories: z.array(z.enum(MISTAKE_CATEGORIES)),
   pauseForAssessment: z.boolean(),
+  /** Mistakes playback: double tick before each new group (a new mistake with its context). */
+  cueGroupTick: z.boolean(),
+  /** Mistakes playback: single tick right before the marked ayah itself. */
+  cueMistakeTick: z.boolean(),
   theme: z.enum(['system', 'light', 'dark']),
   fontScale: z.number().min(0.8).max(2.5),
   /** Hafeez mode: brightness (percent, 0 to 7) of the hidden lower half. 0 = fully invisible. */
@@ -72,6 +76,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   wordPractice: 'grouped',
   categories: [],
   pauseForAssessment: true,
+  cueGroupTick: true,
+  cueMistakeTick: true,
   theme: 'system',
   fontScale: 1.2,
   hafeezGhost: 7,

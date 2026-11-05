@@ -4,6 +4,20 @@ import type { ItemRole, Playlist, PlaylistItem } from './playlist.ts';
 export type Phase = 'mistakes' | 'portion';
 
 /**
+ * Audible orientation cues played right before a step (non-musical ticks in the browser):
+ *   'group'   → a new group (a new mistake with its context ayat) starts — double tick
+ *   'mistake' → the next ayah is the marked one — single tick
+ */
+export type CueKind = 'group' | 'mistake';
+
+export interface CueOptions {
+  readonly group: boolean;
+  readonly mistake: boolean;
+}
+
+export const NO_CUES: CueOptions = { group: false, mistake: false };
+
+/**
  * One concrete play of one ayah. The whole session is a flat, precomputed list of steps, so
  * repetition counts can be verified exactly and the player is a simple cursor over the list.
  */
@@ -27,6 +41,8 @@ export interface PlaybackStep {
   /** Pause after this step finishes, before the next step starts. */
   readonly pauseAfterMs: number;
   readonly isLastRepetition: boolean;
+  /** Cues to play before this step starts, in order (empty for most steps). */
+  readonly cuesBefore: readonly CueKind[];
 }
 
 export class RepeatConfigError extends Error {
@@ -60,8 +76,17 @@ export function validateRepeatConfig(c: RepeatConfig): void {
  *           play the item `reps` times
  * In a 'portion' playlist every ayah is played `ayahRepeat` times only if repeatContext is set,
  * otherwise once (portion ayat behave like context).
+ *
+ * Cues (mistakes phase only, fired at changes, never on plain repetitions):
+ *   'group'   on the first play of a group's FIRST pass (not again on later passes of that group)
+ *   'mistake' on the first play of each marked item in every group pass
  */
-export function expandSequence(playlist: Playlist, config: RepeatConfig, phase: Phase = playlist.kind === 'portion' ? 'portion' : 'mistakes'): PlaybackStep[] {
+export function expandSequence(
+  playlist: Playlist,
+  config: RepeatConfig,
+  phase: Phase = playlist.kind === 'portion' ? 'portion' : 'mistakes',
+  cues: CueOptions = NO_CUES,
+): PlaybackStep[] {
   validateRepeatConfig(config);
   const steps: Omit<PlaybackStep, 'pauseAfterMs' | 'stepIndex'>[] = [];
   for (let p = 1; p <= config.playlistRepeat; p++) {
@@ -71,6 +96,11 @@ export function expandSequence(playlist: Playlist, config: RepeatConfig, phase: 
           const reps = item.role === 'mistake' || config.repeatContext ? config.ayahRepeat : 1;
           const itemKey = `${phase}|${p}|${gi}|${g}|${ii}`;
           for (let r = 1; r <= reps; r++) {
+            const cuesBefore: CueKind[] = [];
+            if (phase === 'mistakes' && r === 1) {
+              if (cues.group && g === 1 && ii === 0) cuesBefore.push('group');
+              if (cues.mistake && item.role === 'mistake') cuesBefore.push('mistake');
+            }
             steps.push({
               phase,
               playlistPass: p,
@@ -85,6 +115,7 @@ export function expandSequence(playlist: Playlist, config: RepeatConfig, phase: 
               repetition: r,
               repetitions: reps,
               isLastRepetition: r === reps,
+              cuesBefore,
             });
           }
         });

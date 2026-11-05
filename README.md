@@ -33,6 +33,9 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   plays per ayah, passes per group and per playlist, pauses, speed, neighbouring ayat, word
   practice, mistake types. Controls: play/pause, previous/next, restart ayah, next mistake,
   restart playlist, stop, repetition indicator (3/5), progress, lock-screen controls.
+  Eyes-free listening cues (Settings, on by default, mistakes part only): a dry double tick
+  when the next mistake's group starts and a single tick right before the marked ayah — no
+  music; the sound is synthesized in the app (no file, works offline).
 * **Recall-based progress**: after each marked ayah you answer *correct*, *correct but
   difficult*, *needed a prompt* or *mistake again*. Only these answers move statuses, the review
   schedule and the score. Listening never counts as memorizing, and nothing is resolved for you.

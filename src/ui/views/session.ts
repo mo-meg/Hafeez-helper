@@ -191,6 +191,7 @@ function statusLine(st: PlayerState): string {
     case 'loading': return t('ses.stLoading');
     case 'playing': return t('ses.stPlaying');
     case 'paused': return t('ses.stPaused');
+    case 'cue': return st.current?.cuesBefore.includes('group') ? t('ses.stCueGroup') : t('ses.stCueMistake');
     case 'gap': return st.current && !st.current.isLastRepetition ? t('ses.stGapRep') : t('ses.stGapAyah');
     case 'awaiting_assessment': return t('ses.stAssess');
     case 'finished': return t('ses.stFinished');
@@ -215,7 +216,7 @@ function playerView(app: App): Node {
   const curEntry = cur ? entries.findIndex((e) => e.itemKey === cur.itemKey) : -1;
   const pct = st.steps.length ? Math.round((100 * Math.min(st.completedSteps, st.steps.length)) / st.steps.length) : 0;
   const text = app.quran.text;
-  const playing = st.status === 'playing' || st.status === 'gap' || st.status === 'loading';
+  const playing = st.status === 'playing' || st.status === 'gap' || st.status === 'loading' || st.status === 'cue';
   const assessable = cur && cur.item.mistakeIds.length > 0;
   const recorded = cur ? a.outcomes.get(cur.item.globalIndex) : undefined;
   const marked = new Set((cur?.item.words ?? []).map((w) => w.position));

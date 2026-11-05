@@ -1,6 +1,6 @@
 import type { AudioCache } from '../browser/audioCache.ts';
 import { notificationsSupported, shouldNotify } from '../browser/reminders.ts';
-import { PlaybackController, type AudioBackend, type TimerApi } from '../core/audio/playbackController.ts';
+import { PlaybackController, type AudioBackend, type CuePlayer, type TimerApi } from '../core/audio/playbackController.ts';
 import { BUILTIN_RECITERS, findReciter, type ReciterSource } from '../core/audio/reciters.ts';
 import type { QuranDataState } from '../core/data/quranDataService.ts';
 import type { DailyPlan, Mistake, RecallOutcome, ReviewEvent, RevisionSession } from '../core/model.ts';
@@ -35,6 +35,8 @@ export interface AppDeps {
   readonly audioBackend: AudioBackend;
   readonly audioCache: AudioCache;
   readonly timers?: TimerApi;
+  /** Orientation ticks for mistakes playback (TickCuePlayer in the browser). */
+  readonly cues?: CuePlayer;
   readonly isOnline: () => boolean;
   /** Persistent notices shown on every page (already localized by the caller). */
   readonly notices?: readonly string[];
@@ -109,6 +111,7 @@ export class App {
     this.player = new PlaybackController({
       backend: deps.audioBackend,
       ...(deps.timers ? { timers: deps.timers } : {}),
+      ...(deps.cues ? { cues: deps.cues } : {}),
       resolveUrl: deps.audioCache.resolver(() => this.reciter().urlTemplate, deps.isOnline),
     });
   }
@@ -397,7 +400,7 @@ export class App {
   }
 
   build(config: SessionConfig): BuiltSession {
-    return buildSession(config, this.data.mistakes, this.quran.index);
+    return buildSession(config, this.data.mistakes, this.quran.index, { cues: { group: this.prefs.cueGroupTick, mistake: this.prefs.cueMistakeTick } });
   }
 
   async startPending(): Promise<void> {
@@ -470,7 +473,7 @@ export class App {
     this.dock.hidden = !show;
     if (!show) return;
     const cur = st.current;
-    const playing = st.status === 'playing' || st.status === 'gap' || st.status === 'loading';
+    const playing = st.status === 'playing' || st.status === 'gap' || st.status === 'loading' || st.status === 'cue';
     const pct = st.steps.length ? Math.round((100 * Math.min(st.completedSteps, st.steps.length)) / st.steps.length) : 0;
     replaceChildren(
       this.dock,

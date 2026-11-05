@@ -1,5 +1,5 @@
 import { formatRef } from '../quran/refs.ts';
-import type { PlaybackStep } from '../playlist/sequence.ts';
+import type { CueKind, PlaybackStep } from '../playlist/sequence.ts';
 
 /** Platform audio abstraction (HTMLAudioElement in the browser, a fake in tests). */
 export interface AudioBackend {
@@ -23,6 +23,30 @@ export const realTimers: TimerApi = {
   clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
 };
 
+/**
+ * Plays short orientation cues (non-musical ticks in the browser). Fire-and-forget: the controller
+ * owns the timing (see CUE_TIMING), so cue playback never blocks or fails a session.
+ */
+export interface CuePlayer {
+  /** Called synchronously during user gestures so the platform allows later cue playback. */
+  prime?(): void;
+  play(kind: CueKind): void;
+}
+
+/**
+ * Cue timing. 'group' = silence → double tick → silence (≈ +1.25 s before a new group);
+ * 'mistake' = single tick → short silence right before the marked ayah. When both apply,
+ * the double tick is followed by the single tick, separated by the group tail.
+ */
+export const CUE_TIMING: Readonly<Record<CueKind, { readonly leadMs: number; readonly soundMs: number; readonly tailMs: number }>> = {
+  group: { leadMs: 300, soundMs: 250, tailMs: 700 },
+  mistake: { leadMs: 0, soundMs: 80, tailMs: 450 },
+};
+
+export function cueDurationMs(cues: readonly CueKind[]): number {
+  return cues.reduce((n, k) => n + CUE_TIMING[k].leadMs + CUE_TIMING[k].soundMs + CUE_TIMING[k].tailMs, 0);
+}
+
 /** Resolves the URL (remote or offline blob) for a step. Throws AudioUnavailableError if impossible. */
 export type UrlResolver = (step: PlaybackStep) => Promise<string>;
 
@@ -33,7 +57,8 @@ export class AudioUnavailableError extends Error {
   }
 }
 
-export type PlayerStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'gap' | 'awaiting_assessment' | 'error' | 'finished';
+/** 'cue' = orientation ticks are playing before the current step (it has not started yet). */
+export type PlayerStatus = 'idle' | 'loading' | 'cue' | 'playing' | 'paused' | 'gap' | 'awaiting_assessment' | 'error' | 'finished';
 
 export interface PlayerError {
   readonly message: string;
@@ -68,6 +93,7 @@ export class PlaybackController {
   private readonly backend: AudioBackend;
   private readonly timers: TimerApi;
   private readonly resolveUrl: UrlResolver;
+  private readonly cuePlayer: CuePlayer | null;
   private steps: readonly PlaybackStep[] = [];
   private index = 0;
   private status: PlayerStatus = 'idle';
@@ -83,8 +109,9 @@ export class PlaybackController {
   private readonly completedListeners = new Set<(s: PlaybackStep) => void>();
   private readonly finishedListeners = new Set<() => void>();
 
-  constructor(deps: { backend: AudioBackend; resolveUrl: UrlResolver; timers?: TimerApi }) {
+  constructor(deps: { backend: AudioBackend; resolveUrl: UrlResolver; timers?: TimerApi; cues?: CuePlayer }) {
     this.backend = deps.backend;
+    this.cuePlayer = deps.cues ?? null;
     this.resolveUrl = deps.resolveUrl;
     this.timers = deps.timers ?? realTimers;
     this.backend.onEnded(() => this.handleEnded());
@@ -193,8 +220,9 @@ export class PlaybackController {
     } else if (this.status === 'gap') {
       this.cancelPending();
       this.pausedFrom = 'gap';
-    } else if (this.status === 'loading') {
-      this.generation++;
+    } else if (this.status === 'loading' || this.status === 'cue') {
+      // Resuming restarts the current step from its cues (it has not been heard yet).
+      this.cancelPending();
       this.pausedFrom = 'loading';
     } else {
       return;
@@ -204,7 +232,7 @@ export class PlaybackController {
   }
 
   togglePlay(): Promise<void> {
-    if (this.status === 'playing' || this.status === 'gap' || this.status === 'loading') {
+    if (this.status === 'playing' || this.status === 'gap' || this.status === 'loading' || this.status === 'cue') {
       this.pause();
       return Promise.resolve();
     }
@@ -249,7 +277,7 @@ export class PlaybackController {
   }
 
   retry(): Promise<void> {
-    return this.goTo(this.index);
+    return this.goTo(this.index, false);
   }
 
   /** Explicitly skip an ayah whose audio failed; it is recorded as skipped. */
@@ -292,7 +320,8 @@ export class PlaybackController {
     }
   }
 
-  private async goTo(i: number): Promise<void> {
+  private async goTo(i: number, withCues = true): Promise<void> {
+    this.cuePlayer?.prime?.();
     this.cancelPending();
     const step = this.steps[i];
     if (!step) {
@@ -304,12 +333,24 @@ export class PlaybackController {
     this.index = i;
     this.error = null;
     this.pausedFrom = null;
-    this.status = 'loading';
+    const cues = withCues && this.cuePlayer ? step.cuesBefore : [];
+    this.status = cues.length > 0 ? 'cue' : 'loading';
     this.emit();
     try {
-      const url = await this.resolveUrl(step);
-      if (gen !== this.generation) return;
-      await this.backend.load(url);
+      // The audio loads while the cues play, so a cue adds no loading delay of its own.
+      const loading = (async () => {
+        const url = await this.resolveUrl(step);
+        if (gen !== this.generation) return;
+        await this.backend.load(url);
+      })();
+      if (cues.length > 0) {
+        loading.catch(() => {}); // surfaced below, after the cues
+        await this.runCues(cues, gen);
+        if (gen !== this.generation) return;
+        this.status = 'loading';
+        this.emit();
+      }
+      await loading;
       if (gen !== this.generation) return;
       this.backend.setRate(this.rate);
       this.status = 'playing';
@@ -318,6 +359,39 @@ export class PlaybackController {
     } catch (e) {
       if (gen === this.generation) this.fail(e);
     }
+  }
+
+  /** Plays the cues with their silences via the timer API; never resolves if superseded. */
+  private runCues(cues: readonly CueKind[], gen: number): Promise<void> {
+    const plan: Array<{ ms: number; fn?: () => void }> = [];
+    for (const k of cues) {
+      const t = CUE_TIMING[k];
+      plan.push({ ms: t.leadMs, fn: () => this.cuePlayer?.play(k) });
+      plan.push({ ms: t.soundMs + t.tailMs });
+    }
+    return new Promise((resolve) => {
+      const run = (j: number) => {
+        if (gen !== this.generation) return;
+        const st = plan[j];
+        if (!st) {
+          resolve();
+          return;
+        }
+        const fire = () => {
+          this.timer = null;
+          if (gen !== this.generation) return;
+          try {
+            st.fn?.();
+          } catch {
+            /* a cue must never break playback */
+          }
+          run(j + 1);
+        };
+        if (st.ms > 0) this.timer = this.timers.set(fire, st.ms);
+        else fire();
+      };
+      run(0);
+    });
   }
 
   private fail(e: unknown) {

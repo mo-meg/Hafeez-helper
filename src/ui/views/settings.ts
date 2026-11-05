@@ -153,7 +153,15 @@ function audioSection(app: App): HTMLElement {
 
 function playbackSection(app: App): HTMLElement {
   const p = app.prefs;
-  const save = (next: Preferences) => void app.act(() => app.savePrefs(next), t('set.playbackSaved'));
+  // `next` is built from the render-time snapshot `p`, and this page does not re-render after a
+  // save. Apply only the fields that changed onto the CURRENT prefs, so changing two options in a
+  // row never reverts the first one.
+  const save = (next: Preferences) => {
+    const changed = <T extends object>(n: T, base: T) => Object.fromEntries(Object.entries(n).filter(([k, v]) => v !== (base as Record<string, unknown>)[k])) as Partial<T>;
+    const cur = app.prefs;
+    const merged: Preferences = { ...cur, ...changed(next, p), repeat: { ...cur.repeat, ...changed(next.repeat, p.repeat) } };
+    void app.act(() => app.savePrefs(merged), t('set.playbackSaved'));
+  };
   const num = (label: string, value: number, min: number, max: number, step: number, apply: (v: number) => Preferences) => {
     const i = h('input', { type: 'number', value: String(value), min: String(min), max: String(max), step: String(step), onchange: () => { const v = Number(i.value); if (v >= min && v <= max) save(apply(v)); else i.value = String(value); } });
     return h('label', { class: 'field' }, h('span', null, label), i);
@@ -181,6 +189,10 @@ function playbackSection(app: App): HTMLElement {
     check(t('set.across'), p.contextAcrossSurahs, (v) => ({ ...p, contextAcrossSurahs: v })),
     check(t('set.wordPractice'), p.wordPractice === 'per_word', (v) => ({ ...p, wordPractice: v ? 'per_word' : 'grouped' })),
     check(t('set.assess'), p.pauseForAssessment, (v) => ({ ...p, pauseForAssessment: v })),
+    h('h3', { style: { 'margin-top': '1rem' } }, t('set.cues')),
+    h('p', { class: 'muted' }, t('set.cuesHelp')),
+    check(t('set.cueGroup'), p.cueGroupTick, (v) => ({ ...p, cueGroupTick: v })),
+    check(t('set.cueMistake'), p.cueMistakeTick, (v) => ({ ...p, cueMistakeTick: v })),
   );
 }
 
