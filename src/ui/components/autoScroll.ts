@@ -57,6 +57,7 @@ function restoreAnchor(a: { el: Element; top: number } | null): void {
 export interface PortionInfo {
   readonly label: string;
   readonly next: { readonly hash: string; readonly label: string } | null;
+  readonly prev?: { readonly hash: string; readonly label: string } | null;
 }
 
 interface WakeLockLike { release(): Promise<void> }
@@ -254,6 +255,25 @@ export class AutoScrollSession {
     if (announce) {
       this.app.toast(t(mode === 'off' ? 'auto.hafeezOffToast' : mode === 'half' ? 'auto.hafeezHalfToast' : 'auto.hafeezHintToast'));
       void this.app.s.store.settings.set(HAFEEZ_KEY, mode).catch(() => undefined);
+    }
+  }
+
+  /** Swipe navigation inside focus mode: moves to another portion and keeps playing if it was playing. */
+  goToPortion(hash: string): void {
+    if (this.stopped) return;
+    const wasPlaying = !this.paused;
+    this.clearResumeTimer();
+    this.clearManualTimer();
+    this.commit();
+    this.paused = true;
+    this.endPrompted = false;
+    this.app.navigate(hash);
+    this.render();
+    if (wasPlaying) {
+      this.resumeTimer = setTimeout(() => {
+        this.resumeTimer = null;
+        if (!this.stopped) this.resume();
+      }, RESUME_DELAY_MS);
     }
   }
 

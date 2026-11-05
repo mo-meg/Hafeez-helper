@@ -44,6 +44,16 @@ export function nextPortion(
   return s < 114 ? { kind: 'surah', number: s + 1 } : null;
 }
 
+/** The portion before the one being read; null at the very beginning. */
+export function previousPortion(
+  current: { readonly division: { readonly kind: DivisionKind; readonly number: number } | null; readonly surah: number | null },
+): NextPortion | null {
+  const d = current.division;
+  if (d) return d.number > 1 ? { kind: d.kind, number: d.number - 1 } : null;
+  const s = current.surah ?? 1;
+  return s > 1 ? { kind: 'surah', number: s - 1 } : null;
+}
+
 export function portionQuery(p: NextPortion): string {
   return `${p.kind}=${p.number}`;
 }
