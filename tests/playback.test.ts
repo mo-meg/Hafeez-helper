@@ -91,6 +91,88 @@ async function runToEnd(backend: FakeBackend, timers: FakeTimers, player: Playba
   }
 }
 
+/** Backend that plays pauses as silence (like the browser one); the test ends each silence. */
+class SilenceBackend extends FakeBackend {
+  silences: number[] = [];
+  private finishSilence: (() => void) | null = null;
+  silence(ms: number) {
+    this.silences.push(ms);
+    return new Promise<void>((resolve) => {
+      this.finishSilence = resolve;
+    });
+  }
+  override stop() {
+    this.endSilence();
+  }
+  override async load(url: string) {
+    this.endSilence();
+    return super.load(url);
+  }
+  endSilence() {
+    const f = this.finishSilence;
+    this.finishSilence = null;
+    f?.();
+  }
+}
+
+describe('playback with the screen off (pauses played as silence)', () => {
+  it('plays each pause as silence through the backend instead of a timer, then continues', async () => {
+    const backend = new SilenceBackend();
+    const timers = new FakeTimers();
+    const player = new PlaybackController({ backend, timers, resolveUrl: async (st) => resolveAudioUrl(TEMPLATE, st.item.ref) });
+    player.setSteps(await steps(cfg({ ayahRepeat: 2 })));
+    await player.start();
+    await tick();
+    backend.end();
+    assert.equal(player.state.status, 'gap');
+    assert.deepEqual(backend.silences, [1000]);
+    // Only the safety guard is pending — progress does not depend on a timer firing.
+    assert.equal(timers.pending.length, 1);
+    assert.equal(timers.pending[0]?.ms, 5000);
+    backend.endSilence();
+    await tick();
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    assert.equal(player.state.current?.repetition, 2);
+    assert.equal(timers.pending.length, 0);
+    backend.end();
+    assert.deepEqual(backend.silences, [1000, 2000]);
+  });
+
+  it('pausing during a silent pause stops it; resuming moves on to the next step', async () => {
+    const backend = new SilenceBackend();
+    const timers = new FakeTimers();
+    const player = new PlaybackController({ backend, timers, resolveUrl: async (st) => resolveAudioUrl(TEMPLATE, st.item.ref) });
+    player.setSteps(await steps(cfg({ ayahRepeat: 2 })));
+    await player.start();
+    await tick();
+    backend.end();
+    player.pause();
+    await tick();
+    assert.equal(player.state.status, 'paused');
+    assert.equal(player.state.current?.repetition, 1);
+    await player.play();
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    assert.equal(player.state.current?.repetition, 2);
+  });
+
+  it('a silence whose end never arrives is ended by the guard timer', async () => {
+    const backend = new SilenceBackend();
+    const timers = new FakeTimers();
+    const player = new PlaybackController({ backend, timers, resolveUrl: async (st) => resolveAudioUrl(TEMPLATE, st.item.ref) });
+    player.setSteps(await steps(cfg({ ayahRepeat: 2 })));
+    await player.start();
+    await tick();
+    backend.end();
+    timers.flush();
+    await tick();
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    assert.equal(player.state.current?.repetition, 2);
+  });
+});
+
 describe('playback controller', () => {
   it('plays each ayah exactly the configured number of times, in Quran order', async () => {
     const s = await steps(cfg({ ayahRepeat: 5 }));

@@ -12,6 +12,14 @@ export interface AudioBackend {
   setRate(rate: number): void;
   onEnded(cb: () => void): void;
   onError(cb: (err: Error) => void): void;
+  /**
+   * Optional: plays `ms` of silence through the same output and resolves when it has ended (or
+   * immediately when stopped / replaced by load()). Used for pauses so the audio never stops:
+   * mobile browsers suspend a page that is not playing audio once the screen is off, and a
+   * timer-based pause would then never wake up to start the next ayah. Rejects if it cannot play
+   * (the controller then falls back to a timer).
+   */
+  silence?(ms: number): Promise<void>;
 }
 
 export interface TimerApi {
@@ -230,6 +238,7 @@ export class PlaybackController {
       this.pausedFrom = 'playing';
     } else if (this.status === 'gap') {
       this.cancelPending();
+      this.backend.stop(); // ends a pause that is playing as silence
       this.pausedFrom = 'gap';
     } else if (this.status === 'loading' || this.status === 'cue') {
       // Resuming restarts the current step from its cues (it has not been heard yet).
@@ -383,6 +392,25 @@ export class PlaybackController {
     });
   }
 
+  /**
+   * A pause of `ms`: played as silence through the backend when it can (keeps the audio session
+   * alive with the screen off), otherwise on the step timer. A guard timer ends a silence whose
+   * 'ended' event never arrives. Returns false if superseded.
+   */
+  private async hold(ms: number, gen: number): Promise<boolean> {
+    if (gen !== this.generation) return false;
+    if (ms <= 0) return true;
+    const silence = this.backend.silence?.bind(this.backend);
+    if (!silence) return this.wait(ms, gen);
+    try {
+      await this.withGuard(silence(ms), ms + 4000);
+    } catch (e) {
+      if (gen !== this.generation) return false;
+      if (!(e instanceof Error && e.message === 'timeout')) return this.wait(ms, gen);
+    }
+    return gen === this.generation;
+  }
+
   /** Races `p` against the guard timer; rejects with 'timeout'. */
   private withGuard<T>(p: Promise<T>, ms: number): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -419,7 +447,7 @@ export class PlaybackController {
     if (!player) return true;
     for (const k of cues) {
       const t = CUE_TIMING[k];
-      if (!(await this.wait(t.leadMs, gen))) return false;
+      if (!(await this.hold(t.leadMs, gen))) return false;
       let urls: readonly string[] = [];
       try {
         urls = await player.sources(k);
@@ -453,7 +481,7 @@ export class PlaybackController {
         if (gen !== this.generation) return false;
         this.cueDone = null;
       }
-      if (!(await this.wait(t.tailMs, gen))) return false;
+      if (!(await this.hold(t.tailMs, gen))) return false;
     }
     return gen === this.generation;
   }
@@ -492,10 +520,9 @@ export class PlaybackController {
       this.status = 'gap';
       this.emit();
       const gen = ++this.generation;
-      this.timer = this.timers.set(() => {
-        this.timer = null;
-        if (gen === this.generation) void this.advance();
-      }, step.pauseAfterMs);
+      void this.hold(step.pauseAfterMs, gen).then((ok) => {
+        if (ok && this.status === 'gap') void this.advance();
+      });
       return;
     }
     void this.advance();

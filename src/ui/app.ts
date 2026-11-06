@@ -513,6 +513,13 @@ export class App {
     }
     this.player.subscribe((st) => {
       const cur = st.current;
+      // Lock-screen / notification controls follow the player (pauses and cues count as playing).
+      try {
+        const active = st.status === 'playing' || st.status === 'gap' || st.status === 'cue' || st.status === 'loading';
+        ms.playbackState = active ? 'playing' : st.status === 'idle' ? 'none' : 'paused';
+      } catch {
+        /* unsupported */
+      }
       if (cur && typeof MediaMetadata !== 'undefined') {
         ms.metadata = new MediaMetadata({ title: refLabel(cur.item.ref), artist: this.reciter().name, album: t('ses.repetition', { n: cur.repetition, total: cur.repetitions }) });
       }
