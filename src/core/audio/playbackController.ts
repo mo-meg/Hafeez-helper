@@ -1,5 +1,6 @@
 import { formatRef } from '../quran/refs.ts';
 import type { CueKind, PlaybackStep } from '../playlist/sequence.ts';
+import type { CueSound } from '../settings/preferences.ts';
 
 /** Platform audio abstraction (HTMLAudioElement in the browser, a fake in tests). */
 export interface AudioBackend {
@@ -24,28 +25,35 @@ export const realTimers: TimerApi = {
 };
 
 /**
- * Plays short orientation cues (non-musical ticks in the browser). Fire-and-forget: the controller
- * owns the timing (see CUE_TIMING), so cue playback never blocks or fails a session.
+ * Supplies orientation cues (a chosen non-musical sound, or the Isti'adha in the reciter's voice).
+ * Cues are played through the SAME audio backend as the recitation, so they are never clipped by
+ * a second audio stream starting up and they keep working with the screen locked.
  */
 export interface CuePlayer {
-  /** Called synchronously during user gestures so the platform allows later cue playback. */
-  prime?(): void;
-  play(kind: CueKind): void;
+  /** Candidate URLs for this cue, best first; later ones are fallbacks. Empty = no cue. */
+  sources(kind: CueKind): Promise<readonly string[]> | readonly string[];
+}
+
+/** Maps a chosen cue sound to playable URLs (browser: synthesized WAVs and Isti'adha files). */
+export interface CueSoundSource {
+  sources(sound: CueSound, reciterTemplate: string): Promise<readonly string[]>;
+  /** Plays the sound once (Settings preview). */
+  preview(sound: CueSound, reciterTemplate: string): void;
 }
 
 /**
- * Cue timing. 'group' = silence → double tick → silence (≈ +1.25 s before a new group);
- * 'mistake' = single tick → short silence right before the marked ayah. When both apply,
- * the double tick is followed by the single tick, separated by the group tail.
+ * Cue timing around the sound itself (whose length is the real file length):
+ *   group   → 400 ms silence, sound, 600 ms silence, then the group's first ayah
+ *   mistake → 150 ms silence, sound, 350 ms silence, then the marked ayah
+ * A cue whose file does not load within loadTimeoutMs falls back to the next candidate; if none
+ * plays, the cue is skipped silently — a cue never stops or fails a session.
  */
-export const CUE_TIMING: Readonly<Record<CueKind, { readonly leadMs: number; readonly soundMs: number; readonly tailMs: number }>> = {
-  group: { leadMs: 300, soundMs: 250, tailMs: 700 },
-  mistake: { leadMs: 0, soundMs: 80, tailMs: 450 },
-};
-
-export function cueDurationMs(cues: readonly CueKind[]): number {
-  return cues.reduce((n, k) => n + CUE_TIMING[k].leadMs + CUE_TIMING[k].soundMs + CUE_TIMING[k].tailMs, 0);
-}
+export const CUE_TIMING = {
+  group: { leadMs: 400, tailMs: 600 },
+  mistake: { leadMs: 150, tailMs: 350 },
+  loadTimeoutMs: 4000,
+  maxPlayMs: 15_000,
+} as const;
 
 /** Resolves the URL (remote or offline blob) for a step. Throws AudioUnavailableError if impossible. */
 export type UrlResolver = (step: PlaybackStep) => Promise<string>;
@@ -105,6 +113,8 @@ export class PlaybackController {
   private assessmentPause = false;
   private generation = 0;
   private timer: unknown = null;
+  private guard: unknown = null;
+  private cueDone: (() => void) | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly completedListeners = new Set<(s: PlaybackStep) => void>();
   private readonly finishedListeners = new Set<() => void>();
@@ -116,7 +126,8 @@ export class PlaybackController {
     this.timers = deps.timers ?? realTimers;
     this.backend.onEnded(() => this.handleEnded());
     this.backend.onError((err) => {
-      if (this.status === 'playing' || this.status === 'loading') this.fail(err);
+      if (this.status === 'cue') this.cueDone?.();
+      else if (this.status === 'playing' || this.status === 'loading') this.fail(err);
     });
   }
 
@@ -223,6 +234,7 @@ export class PlaybackController {
     } else if (this.status === 'loading' || this.status === 'cue') {
       // Resuming restarts the current step from its cues (it has not been heard yet).
       this.cancelPending();
+      this.backend.stop();
       this.pausedFrom = 'loading';
     } else {
       return;
@@ -314,14 +326,18 @@ export class PlaybackController {
 
   private cancelPending() {
     this.generation++;
+    this.cueDone = null;
     if (this.timer !== null) {
       this.timers.clear(this.timer);
       this.timer = null;
     }
+    if (this.guard !== null) {
+      this.timers.clear(this.guard);
+      this.guard = null;
+    }
   }
 
   private async goTo(i: number, withCues = true): Promise<void> {
-    this.cuePlayer?.prime?.();
     this.cancelPending();
     const step = this.steps[i];
     if (!step) {
@@ -336,21 +352,15 @@ export class PlaybackController {
     const cues = withCues && this.cuePlayer ? step.cuesBefore : [];
     this.status = cues.length > 0 ? 'cue' : 'loading';
     this.emit();
+    if (cues.length > 0) {
+      if (!(await this.runCues(cues, gen))) return;
+      this.status = 'loading';
+      this.emit();
+    }
     try {
-      // The audio loads while the cues play, so a cue adds no loading delay of its own.
-      const loading = (async () => {
-        const url = await this.resolveUrl(step);
-        if (gen !== this.generation) return;
-        await this.backend.load(url);
-      })();
-      if (cues.length > 0) {
-        loading.catch(() => {}); // surfaced below, after the cues
-        await this.runCues(cues, gen);
-        if (gen !== this.generation) return;
-        this.status = 'loading';
-        this.emit();
-      }
-      await loading;
+      const url = await this.resolveUrl(step);
+      if (gen !== this.generation) return;
+      await this.backend.load(url);
       if (gen !== this.generation) return;
       this.backend.setRate(this.rate);
       this.status = 'playing';
@@ -361,37 +371,91 @@ export class PlaybackController {
     }
   }
 
-  /** Plays the cues with their silences via the timer API; never resolves if superseded. */
-  private runCues(cues: readonly CueKind[], gen: number): Promise<void> {
-    const plan: Array<{ ms: number; fn?: () => void }> = [];
+  /** Resolves after `ms` on the step timer; never resolves if superseded (generation changed). */
+  private wait(ms: number, gen: number): Promise<boolean> {
+    if (gen !== this.generation) return Promise.resolve(false);
+    if (ms <= 0) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      this.timer = this.timers.set(() => {
+        this.timer = null;
+        if (gen === this.generation) resolve(true);
+      }, ms);
+    });
+  }
+
+  /** Races `p` against the guard timer; rejects with 'timeout'. */
+  private withGuard<T>(p: Promise<T>, ms: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const h = this.timers.set(() => {
+        if (this.guard === h) this.guard = null;
+        reject(new Error('timeout'));
+      }, ms);
+      this.guard = h;
+      const clear = () => {
+        if (this.guard === h) {
+          this.timers.clear(h);
+          this.guard = null;
+        }
+      };
+      p.then(
+        (v) => {
+          clear();
+          resolve(v);
+        },
+        (e) => {
+          clear();
+          reject(e);
+        },
+      );
+    });
+  }
+
+  /**
+   * Plays each cue through the backend: lead silence → first candidate that loads → wait for its
+   * real end → tail silence. Returns false if superseded (pause, navigation, stop).
+   */
+  private async runCues(cues: readonly CueKind[], gen: number): Promise<boolean> {
+    const player = this.cuePlayer;
+    if (!player) return true;
     for (const k of cues) {
       const t = CUE_TIMING[k];
-      plan.push({ ms: t.leadMs, fn: () => this.cuePlayer?.play(k) });
-      plan.push({ ms: t.soundMs + t.tailMs });
-    }
-    return new Promise((resolve) => {
-      const run = (j: number) => {
-        if (gen !== this.generation) return;
-        const st = plan[j];
-        if (!st) {
-          resolve();
-          return;
+      if (!(await this.wait(t.leadMs, gen))) return false;
+      let urls: readonly string[] = [];
+      try {
+        urls = await player.sources(k);
+      } catch {
+        urls = [];
+      }
+      if (gen !== this.generation) return false;
+      let loaded = false;
+      for (const url of urls) {
+        try {
+          await this.withGuard(this.backend.load(url), CUE_TIMING.loadTimeoutMs);
+          loaded = true;
+          break;
+        } catch {
+          if (gen !== this.generation) return false;
         }
-        const fire = () => {
-          this.timer = null;
-          if (gen !== this.generation) return;
-          try {
-            st.fn?.();
-          } catch {
-            /* a cue must never break playback */
-          }
-          run(j + 1);
-        };
-        if (st.ms > 0) this.timer = this.timers.set(fire, st.ms);
-        else fire();
-      };
-      run(0);
-    });
+      }
+      if (gen !== this.generation) return false;
+      if (loaded) {
+        const ended = new Promise<void>((resolve) => {
+          this.cueDone = resolve;
+        });
+        this.backend.setRate(1);
+        try {
+          await this.backend.play();
+          if (gen !== this.generation) return false;
+          await this.withGuard(ended, CUE_TIMING.maxPlayMs).catch(() => this.backend.stop());
+        } catch {
+          /* blocked or failed: skip this cue */
+        }
+        if (gen !== this.generation) return false;
+        this.cueDone = null;
+      }
+      if (!(await this.wait(t.tailMs, gen))) return false;
+    }
+    return gen === this.generation;
   }
 
   private fail(e: unknown) {
@@ -406,6 +470,10 @@ export class PlaybackController {
   }
 
   private handleEnded() {
+    if (this.status === 'cue') {
+      this.cueDone?.();
+      return;
+    }
     if (this.status !== 'playing') return;
     const step = this.steps[this.index];
     if (!step) return;

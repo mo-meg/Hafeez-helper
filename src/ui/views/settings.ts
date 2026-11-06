@@ -4,11 +4,12 @@ import { resolveAudioUrl, TemplateError, validateTemplate, type ReciterSource } 
 import { removeDemoData, seedDemoData } from '../../core/demo.ts';
 import { ANCHOR_SOURCES } from '../../core/quran/anchors.ts';
 
-import { REPEAT_LIMITS } from '../../core/playlist/sequence.ts';
-import type { Preferences } from '../../core/settings/preferences.ts';
+import { REPEAT_LIMITS, type CueKind } from '../../core/playlist/sequence.ts';
+import { CUE_SOUNDS, MISTAKE_CUE_SOUNDS, type CueSound, type Preferences } from '../../core/settings/preferences.ts';
 import { exportBackup, parseBackup, restoreBackup, wipePersonalData } from '../../core/storage/backup.ts';
 import type { App } from '../app.ts';
 import { confirmDialog } from '../components/dialog.ts';
+import { icon } from '../components/icons.ts';
 import { formatDateTime, h } from '../dom.ts';
 import { fmtNum, t, t as tr } from '../i18n/index.ts';
 import { kindName, LocalizedError, reciterAttribution, reciterName } from '../i18n/labels.ts';
@@ -191,9 +192,37 @@ function playbackSection(app: App): HTMLElement {
     check(t('set.assess'), p.pauseForAssessment, (v) => ({ ...p, pauseForAssessment: v })),
     h('h3', { style: { 'margin-top': '1rem' } }, t('set.cues')),
     h('p', { class: 'muted' }, t('set.cuesHelp')),
-    check(t('set.cueGroup'), p.cueGroupTick, (v) => ({ ...p, cueGroupTick: v })),
-    check(t('set.cueMistake'), p.cueMistakeTick, (v) => ({ ...p, cueMistakeTick: v })),
+    cuePicker(app, 'group', p.cueGroupSound, CUE_SOUNDS, (v) => save({ ...p, cueGroupSound: v })),
+    cuePicker(app, 'mistake', p.cueMistakeSound, MISTAKE_CUE_SOUNDS, (v) => save({ ...p, cueMistakeSound: v as Preferences['cueMistakeSound'] })),
   );
+}
+
+/** One cue: a sound list plus a play button to hear the current choice. */
+function cuePicker(app: App, kind: CueKind, value: CueSound, options: readonly CueSound[], onChange: (v: CueSound) => void): HTMLElement {
+  const sel = h(
+    'select',
+    { 'data-key': `cue-${kind}`, onchange: () => onChange(sel.value as CueSound) },
+    options.map((o) => h('option', { value: o, selected: o === value }, cueSoundLabel(o))),
+  ) as HTMLSelectElement;
+  const label = kind === 'group' ? t('set.cueGroup') : t('set.cueMistake');
+  return h(
+    'div',
+    { class: 'row', style: { 'align-items': 'flex-end', 'margin-top': '0.5rem' } },
+    h('label', { class: 'field', style: { flex: '1 1 16rem' } }, h('span', null, label), sel),
+    h('button', {
+      type: 'button',
+      class: 'icon',
+      'data-key': `cue-preview-${kind}`,
+      'aria-label': t('set.cuePreview'),
+      title: t('set.cuePreview'),
+      disabled: !app.deps.cueSounds,
+      onclick: () => app.deps.cueSounds?.preview(sel.value as CueSound, app.reciter().urlTemplate),
+    }, icon('play')),
+  );
+}
+
+function cueSoundLabel(s: CueSound): string {
+  return t(`set.cueSound.${s}`);
 }
 
 function appearanceSection(app: App): HTMLElement {
