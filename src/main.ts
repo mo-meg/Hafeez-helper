@@ -2,7 +2,7 @@ import './ui/styles.css';
 import { AudioCache } from './browser/audioCache.ts';
 import { clearSession, languageHint, loadSession, pendingWipe, saveSession, setLanguageHint, setPendingWipe } from './browser/authStorage.ts';
 import { HtmlAudioBackend } from './browser/htmlAudioBackend.ts';
-import { TickCuePlayer } from './browser/tickCues.ts';
+import { CueSoundLibrary } from './browser/cueSounds.ts';
 import { createIdbStore, deleteDatabase, userDatabaseName } from './browser/idbStore.ts';
 import { createServices } from './core/services.ts';
 import { exportBackup, restoreBackup } from './core/storage/backup.ts';
@@ -34,7 +34,9 @@ async function openDeviceStore(): Promise<{ store: Store; storageError?: string 
 
 function startApp(root: HTMLElement, store: Store, extra: Partial<ConstructorParameters<typeof App>[0]> = {}): Promise<App> {
   const services = createServices({ store, clock: systemClock, ids: randomIds, fetcher: (url, init) => fetch(url, init) });
-  const app = new App({ services, audioBackend: new HtmlAudioBackend(), cues: new TickCuePlayer(), audioCache: new AudioCache(store.audio), isOnline: () => navigator.onLine, ...extra });
+  const audioCache = new AudioCache(store.audio);
+  const isOnline = () => navigator.onLine;
+  const app = new App({ services, audioBackend: new HtmlAudioBackend(), cueSounds: new CueSoundLibrary(audioCache, isOnline), audioCache, isOnline, ...extra });
   return app.start(root).then(() => app);
 }
 

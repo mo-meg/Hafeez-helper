@@ -1,6 +1,6 @@
 import type { AudioCache } from '../browser/audioCache.ts';
 import { notificationsSupported, shouldNotify } from '../browser/reminders.ts';
-import { PlaybackController, type AudioBackend, type CuePlayer, type TimerApi } from '../core/audio/playbackController.ts';
+import { PlaybackController, type AudioBackend, type CueSoundSource, type TimerApi } from '../core/audio/playbackController.ts';
 import { BUILTIN_RECITERS, findReciter, type ReciterSource } from '../core/audio/reciters.ts';
 import type { QuranDataState } from '../core/data/quranDataService.ts';
 import type { DailyPlan, Mistake, RecallOutcome, ReviewEvent, RevisionSession } from '../core/model.ts';
@@ -9,6 +9,8 @@ import type { QuranTextDataset } from '../core/quran/text.ts';
 import type { AyahRef } from '../core/quran/types.ts';
 import type { AppServices } from '../core/services.ts';
 import { buildSession, type BuiltSession, type SessionConfig } from '../core/session/sessionBuilder.ts';
+import type { CueKind } from '../core/playlist/sequence.ts';
+import { istiadhaUrls } from '../core/audio/reciters.ts';
 import type { Preferences } from '../core/settings/preferences.ts';
 import { localDateKey } from '../core/util/ids.ts';
 import { dir, getLocale, setLocale, t, type Locale, type MessageKey } from './i18n/index.ts';
@@ -35,8 +37,8 @@ export interface AppDeps {
   readonly audioBackend: AudioBackend;
   readonly audioCache: AudioCache;
   readonly timers?: TimerApi;
-  /** Orientation ticks for mistakes playback (TickCuePlayer in the browser). */
-  readonly cues?: CuePlayer;
+  /** Orientation cue sounds for mistakes playback (CueSoundLibrary in the browser). */
+  readonly cueSounds?: CueSoundSource;
   readonly isOnline: () => boolean;
   /** Persistent notices shown on every page (already localized by the caller). */
   readonly notices?: readonly string[];
@@ -111,7 +113,7 @@ export class App {
     this.player = new PlaybackController({
       backend: deps.audioBackend,
       ...(deps.timers ? { timers: deps.timers } : {}),
-      ...(deps.cues ? { cues: deps.cues } : {}),
+      ...(deps.cueSounds ? { cues: { sources: (k: CueKind) => this.cueSources(k) } } : {}),
       resolveUrl: deps.audioCache.resolver(() => this.reciter().urlTemplate, deps.isOnline),
     });
   }
@@ -399,8 +401,20 @@ export class App {
     this.navigate('#/session');
   }
 
+  /** Playable URLs for a cue, following the sounds chosen in Settings. */
+  cueSources(kind: CueKind): Promise<readonly string[]> {
+    const lib = this.deps.cueSounds;
+    if (!lib) return Promise.resolve([]);
+    return lib.sources(kind === 'group' ? this.prefs.cueGroupSound : this.prefs.cueMistakeSound, this.reciter().urlTemplate);
+  }
+
+  /** Extra files for "Save for offline" (the Isti'adha recordings when that cue is chosen). */
+  cueDownloadUrls(): string[] {
+    return this.prefs.cueGroupSound === 'istiadha' ? istiadhaUrls(this.reciter().urlTemplate) : [];
+  }
+
   build(config: SessionConfig): BuiltSession {
-    return buildSession(config, this.data.mistakes, this.quran.index, { cues: { group: this.prefs.cueGroupTick, mistake: this.prefs.cueMistakeTick } });
+    return buildSession(config, this.data.mistakes, this.quran.index, { cues: { group: this.prefs.cueGroupSound !== 'none', mistake: this.prefs.cueMistakeSound !== 'none' } });
   }
 
   async startPending(): Promise<void> {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AudioUnavailableError, CUE_TIMING, cueDurationMs, PlaybackController, type AudioBackend, type CuePlayer, type TimerApi } from '../src/core/audio/playbackController.ts';
+import { AudioUnavailableError, CUE_TIMING, PlaybackController, type AudioBackend, type CuePlayer, type TimerApi } from '../src/core/audio/playbackController.ts';
 import { BUILTIN_RECITERS, resolveAudioUrl, TemplateError, validateTemplate } from '../src/core/audio/reciters.ts';
 import type { RepeatConfig } from '../src/core/model.ts';
 import { buildMistakePlaylist } from '../src/core/playlist/playlist.ts';
@@ -12,11 +12,14 @@ class FakeBackend implements AudioBackend {
   loads: string[] = [];
   plays = 0;
   failUrls = new Set<string>();
+  /** URLs whose load never settles (stalled network). */
+  hangUrls = new Set<string>();
   rate = 1;
   private ended: () => void = () => {};
   private errored: (e: Error) => void = () => {};
   async load(url: string) {
     this.loads.push(url);
+    if (this.hangUrls.has(url)) await new Promise(() => {});
     if (this.failUrls.has(url)) throw new Error('HTTP 404');
   }
   async play() {
@@ -265,13 +268,12 @@ describe('reciter URL templates', () => {
 });
 
 class FakeCues implements CuePlayer {
-  played: CueKind[] = [];
-  primes = 0;
-  prime() {
-    this.primes++;
-  }
-  play(k: CueKind) {
-    this.played.push(k);
+  map: Record<CueKind, string[]> = {
+    group: ['cue://istiadha-reciter', 'cue://istiadha-general', 'cue://knock'],
+    mistake: ['cue://clap'],
+  };
+  sources(k: CueKind) {
+    return Promise.resolve(this.map[k]);
   }
 }
 
@@ -284,40 +286,102 @@ function makeWithCues(s: PlaybackStep[]) {
   return { backend, timers, cues, player };
 }
 
+const ayah = (n: number) => `https://audio.test/002${String(n).padStart(3, '0')}.mp3`;
+
 describe('playback controller — orientation cues', () => {
   const both = { group: true, mistake: true };
 
-  it('plays tick-tick, then tick, with the agreed silences, while the ayah loads in parallel', async () => {
-    const { backend, timers, cues, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 1, both));
+  it('plays each cue through the recitation player, waits for its real end, then the ayah', async () => {
+    const { backend, timers, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 1, both));
     void player.start();
     assert.equal(player.state.status, 'cue');
-    assert.ok(cues.primes > 0, 'cue player is primed inside the user gesture');
-    await tick();
-    assert.equal(backend.loads.length, 1, 'audio loads during the cue');
-    assert.equal(backend.plays, 0);
-    // Context ayah 2:254 starts the first group → double tick only.
+    // Group cue (before the preceding ayah 2:254): lead silence → Isti'adha → its end → tail silence.
     assert.equal(timers.flush(), CUE_TIMING.group.leadMs);
-    assert.deepEqual(cues.played, ['group']);
-    assert.equal(timers.flush(), CUE_TIMING.group.soundMs + CUE_TIMING.group.tailMs);
+    await tick();
+    assert.deepEqual(backend.loads, ['cue://istiadha-reciter']);
+    assert.equal(backend.rate, 1, 'cues play at normal speed');
+    assert.equal(player.state.status, 'cue', 'still in the cue while it sounds');
+    backend.end();
+    await tick();
+    assert.equal(timers.pending.length, 1);
+    assert.equal(timers.flush(), CUE_TIMING.group.tailMs);
     await tick();
     assert.equal(player.state.status, 'playing');
-    assert.deepEqual(player.state.current?.item.ref, { surah: 2, ayah: 254 });
-    // Context ends → normal ayah pause → single tick right before the marked ayah.
+    assert.deepEqual(backend.loads.slice(1), [ayah(254)]);
+    // Preceding ayah ends → normal pause → mistake cue → marked ayah.
     backend.end();
     assert.equal(timers.flush(), 2000);
     await tick();
     assert.equal(player.state.status, 'cue');
-    assert.deepEqual(cues.played, ['group', 'mistake'], 'mistake tick has no lead silence');
-    assert.equal(timers.flush(), CUE_TIMING.mistake.soundMs + CUE_TIMING.mistake.tailMs);
+    assert.equal(timers.flush(), CUE_TIMING.mistake.leadMs);
+    await tick();
+    assert.equal(backend.loads.at(-1), 'cue://clap');
+    backend.end();
+    await tick();
+    assert.equal(timers.flush(), CUE_TIMING.mistake.tailMs);
     await tick();
     assert.equal(player.state.status, 'playing');
-    assert.deepEqual(player.state.current?.item.ref, { surah: 2, ayah: 255 });
+    assert.equal(backend.loads.at(-1), ayah(255));
   });
 
-  it('adds about one second around a new group and nothing on plain repetitions', async () => {
-    assert.ok(cueDurationMs(['group']) >= 1000);
-    const { backend, timers, cues, player } = makeWithCues(await steps(cfg({ ayahRepeat: 2 }), 0, { group: false, mistake: true }));
+  it("falls back: reciter's Isti'adha missing → general file; stalled load → next after the timeout", async () => {
+    const { backend, timers, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 1, { group: true, mistake: false }));
+    backend.failUrls.add('cue://istiadha-reciter');
+    backend.hangUrls.add('cue://istiadha-general');
     void player.start();
+    timers.flush(); // lead
+    await tick();
+    assert.deepEqual(backend.loads, ['cue://istiadha-reciter', 'cue://istiadha-general']);
+    assert.equal(timers.flush(), CUE_TIMING.loadTimeoutMs);
+    await tick();
+    assert.deepEqual(backend.loads.at(-1), 'cue://knock');
+    backend.end();
+    await tick();
+    timers.flush(); // tail
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    assert.equal(player.state.error, null);
+  });
+
+  it('when no cue file can be played the cue is skipped and the session continues', async () => {
+    const { backend, timers, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 0, { group: true, mistake: false }));
+    for (const u of ['cue://istiadha-reciter', 'cue://istiadha-general', 'cue://knock']) backend.failUrls.add(u);
+    void player.start();
+    timers.flush(); // lead
+    await tick();
+    timers.flush(); // tail
+    await tick();
+    assert.equal(player.state.status, 'playing');
+    assert.equal(backend.loads.at(-1), ayah(255));
+  });
+
+  it('a cue that never reports its end is cut after the safety limit', async () => {
+    const { backend, timers, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 0, { group: false, mistake: true }));
+    void player.start();
+    timers.flush(); // lead
+    await tick();
+    assert.equal(backend.loads.at(-1), 'cue://clap');
+    assert.equal(timers.flush(), CUE_TIMING.maxPlayMs);
+    await tick();
+    timers.flush(); // tail
+    await tick();
+    assert.equal(player.state.status, 'playing');
+  });
+
+  it('no cue on plain repetitions; pausing during a cue stops it and resuming replays it', async () => {
+    const { backend, timers, player } = makeWithCues(await steps(cfg({ ayahRepeat: 2 }), 0, { group: false, mistake: true }));
+    void player.start();
+    timers.flush();
+    await tick();
+    player.pause();
+    assert.equal(player.state.status, 'paused');
+    assert.equal(timers.pending.length, 0);
+    void player.play();
+    assert.equal(player.state.status, 'cue');
+    timers.flush();
+    await tick();
+    assert.deepEqual(backend.loads, ['cue://clap', 'cue://clap']);
+    backend.end();
     await tick();
     timers.flush();
     await tick();
@@ -326,37 +390,25 @@ describe('playback controller — orientation cues', () => {
     timers.flush(); // repetition pause
     await tick();
     assert.equal(player.state.status, 'playing', 'second repetition starts without a cue');
-    assert.deepEqual(cues.played, ['mistake']);
-  });
-
-  it('pausing during a cue cancels it; resuming replays the cue', async () => {
-    const { timers, cues, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 0, both));
-    void player.start();
-    await tick();
-    timers.flush();
-    player.pause();
-    assert.equal(player.state.status, 'paused');
-    assert.equal(timers.pending.length, 0);
-    void player.play();
-    assert.equal(player.state.status, 'cue');
-    timers.flush();
-    assert.deepEqual(cues.played, ['group', 'group']);
+    assert.equal(backend.loads.filter((u) => u.startsWith('cue://')).length, 2);
   });
 
   it('retry after an audio error does not replay the cue', async () => {
-    const s = await steps(cfg({ ayahRepeat: 1 }), 0, both);
-    const { backend, timers, cues, player } = makeWithCues(s);
-    backend.failUrls.add('https://audio.test/002255.mp3');
+    const { backend, timers, player } = makeWithCues(await steps(cfg({ ayahRepeat: 1 }), 0, { group: false, mistake: true }));
+    backend.failUrls.add(ayah(255));
     void player.start();
+    timers.flush();
     await tick();
-    while (timers.pending.length) timers.flush();
+    backend.end();
+    await tick();
+    timers.flush();
     await tick();
     assert.equal(player.state.status, 'error');
-    const before = cues.played.length;
+    const before = backend.loads.length;
     backend.failUrls.clear();
     await player.retry();
     assert.equal(player.state.status, 'playing');
-    assert.equal(cues.played.length, before);
+    assert.deepEqual(backend.loads.slice(before), [ayah(255)]);
   });
 
   it('without a cue player, cue-marked steps play immediately (no silent delay)', async () => {

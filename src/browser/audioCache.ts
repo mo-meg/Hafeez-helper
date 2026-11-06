@@ -59,18 +59,23 @@ export class AudioCache {
     this.objectUrls.clear();
   }
 
+  /** Object URL of an offline copy of `url`, or null when it was never downloaded. */
+  async objectUrlFor(url: string): Promise<string | null> {
+    const cachedUrl = this.objectUrls.get(url);
+    if (cachedUrl) return cachedUrl;
+    const blob = await this.kv.get<Blob>(url);
+    if (!blob) return null;
+    const objectUrl = URL.createObjectURL(blob);
+    this.objectUrls.set(url, objectUrl);
+    return objectUrl;
+  }
+
   /** Prefers an offline copy; otherwise streams; offline without a copy is an explicit error. */
   resolver(template: () => string, isOnline: () => boolean): UrlResolver {
     return async (step: PlaybackStep) => {
       const url = resolveAudioUrl(template(), step.item.ref);
-      const cachedUrl = this.objectUrls.get(url);
-      if (cachedUrl) return cachedUrl;
-      const blob = await this.kv.get<Blob>(url);
-      if (blob) {
-        const objectUrl = URL.createObjectURL(blob);
-        this.objectUrls.set(url, objectUrl);
-        return objectUrl;
-      }
+      const offline = await this.objectUrlFor(url);
+      if (offline) return offline;
       if (!isOnline()) throw new AudioUnavailableError('you are offline and this ayah has not been downloaded for offline use');
       return url;
     };

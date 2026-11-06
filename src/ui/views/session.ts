@@ -161,6 +161,8 @@ function previewView(app: App, cfg: SessionConfig, title: string): Node {
                 const btn = e.currentTarget as HTMLButtonElement;
                 btn.disabled = true;
                 const res = await app.deps.audioCache.download(urls, (d, total) => { offlineStatus.textContent = t('ses.downloading', { n: d, total }); });
+                // Best effort: the Isti'adha cue (if chosen) so it also works offline; failures fall back to a sound.
+                await app.deps.audioCache.download(app.cueDownloadUrls(), () => {});
                 btn.disabled = false;
                 offlineStatus.textContent = res.failed.length ? t('ses.savedPartial', { ok: res.ok, total: urls.length, failed: res.failed.length }) : t('ses.savedAll', { total: urls.length });
               },

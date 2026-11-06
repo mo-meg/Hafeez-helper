@@ -43,6 +43,18 @@ export const BUILTIN_RECITERS: readonly ReciterSource[] = [
 
 export const DEFAULT_RECITER_ID = 'husary-murattal-everyayah';
 
+/**
+ * Isti'adha recordings. EveryAyah serves a general file at /data/audhubillah.mp3 and some reciter
+ * folders contain their own audhubillah.mp3 (not all). Best first: the reciter's own folder, then
+ * the general file. Other hosts only get the general file (a different voice).
+ */
+export const ISTIADHA_GENERAL_URL = 'https://everyayah.com/data/audhubillah.mp3';
+
+export function istiadhaUrls(template: string): string[] {
+  const m = /^(https?:\/\/(?:www\.)?everyayah\.com\/data\/[^/]+\/)\{surah3\}\{ayah3\}\.mp3$/.exec(template);
+  return m ? [`${m[1]}audhubillah.mp3`, ISTIADHA_GENERAL_URL] : [ISTIADHA_GENERAL_URL];
+}
+
 export class TemplateError extends Error {
   constructor(message: string) {
     super(message);

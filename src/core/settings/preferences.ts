@@ -5,6 +5,16 @@ import { REPEAT_LIMITS } from '../playlist/sequence.ts';
 
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
 
+/**
+ * Orientation cue sounds for mistakes playback. None is musical: 'istiadha' is the reciter's
+ * recorded Isti'adha (falls back to 'knock' when unavailable); the others are synthesized noise
+ * shapes (wood knock, paper page turn, air whoosh, hand clap, dry tick).
+ */
+export const CUE_SOUNDS = ['istiadha', 'knock', 'page', 'whoosh', 'clap', 'tick', 'none'] as const;
+export type CueSound = (typeof CUE_SOUNDS)[number];
+/** Sounds offered before the marked ayah (the Isti'adha belongs to the start of a group). */
+export const MISTAKE_CUE_SOUNDS: readonly CueSound[] = CUE_SOUNDS.filter((s) => s !== 'istiadha');
+
 export const RepeatConfigSchema = z.object({
   ayahRepeat: int(1, REPEAT_LIMITS.maxRepeat),
   groupRepeat: int(1, REPEAT_LIMITS.maxRepeat),
@@ -39,10 +49,10 @@ export const PreferencesSchema = z.object({
   wordPractice: z.enum(['grouped', 'per_word']),
   categories: z.array(z.enum(MISTAKE_CATEGORIES)),
   pauseForAssessment: z.boolean(),
-  /** Mistakes playback: double tick before each new group (a new mistake with its context). */
-  cueGroupTick: z.boolean(),
-  /** Mistakes playback: single tick right before the marked ayah itself. */
-  cueMistakeTick: z.boolean(),
+  /** Mistakes playback: sound before each new group (a new mistake with its preceding ayat). */
+  cueGroupSound: z.enum(CUE_SOUNDS),
+  /** Mistakes playback: sound right before the marked ayah itself. */
+  cueMistakeSound: z.enum(CUE_SOUNDS).refine((v) => v !== 'istiadha'),
   theme: z.enum(['system', 'light', 'dark']),
   fontScale: z.number().min(0.8).max(2.5),
   /** Hafeez mode: brightness (percent, 0 to 7) of the hidden lower half. 0 = fully invisible. */
@@ -76,8 +86,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   wordPractice: 'grouped',
   categories: [],
   pauseForAssessment: true,
-  cueGroupTick: true,
-  cueMistakeTick: true,
+  cueGroupSound: 'istiadha',
+  cueMistakeSound: 'knock',
   theme: 'system',
   fontScale: 1.2,
   hafeezGhost: 7,
@@ -88,7 +98,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
 /** Merges stored (possibly older/partial) preferences onto defaults; invalid fields fall back. */
 export function normalizePreferences(raw: unknown): Preferences {
   if (!raw || typeof raw !== 'object') return DEFAULT_PREFERENCES;
-  const r = raw as Record<string, unknown>;
+  const r = { ...(raw as Record<string, unknown>) };
+  // 2026-11-05 builds stored on/off ticks; keep an explicit "off" as 'none'.
+  if (r.cueGroupSound === undefined && r.cueGroupTick === false) r.cueGroupSound = 'none';
+  if (r.cueMistakeSound === undefined && r.cueMistakeTick === false) r.cueMistakeSound = 'none';
+  delete r.cueGroupTick;
+  delete r.cueMistakeTick;
   const merged = {
     ...DEFAULT_PREFERENCES,
     ...r,
