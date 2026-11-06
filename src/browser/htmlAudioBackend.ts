@@ -38,9 +38,13 @@ export class HtmlAudioBackend implements AudioBackend {
   /** Resolves the silence that is playing now (null when none). */
   private silenceDone: (() => void) | null = null;
   private readonly silenceUrls = new Map<number, string>();
+  /** Bumped by load/pause/stop/play so a stalled-start recovery never acts on a newer command. */
+  private playToken = 0;
+  private readonly playStartMs: number;
 
-  constructor(timeoutMs = 20_000) {
+  constructor(timeoutMs = 20_000, playStartMs = 8000) {
     this.timeoutMs = timeoutMs;
+    this.playStartMs = playStartMs;
     this.audio = new Audio();
     this.audio.preload = 'auto';
     this.audio.addEventListener('ended', () => {
@@ -73,6 +77,7 @@ export class HtmlAudioBackend implements AudioBackend {
 
   silence(ms: number): Promise<void> {
     this.endSilence();
+    this.playToken++;
     const audio = this.audio;
     return new Promise<void>((resolve, reject) => {
       const finish = (err?: Error) => {
@@ -92,12 +97,24 @@ export class HtmlAudioBackend implements AudioBackend {
     });
   }
 
+  private pageHidden(): boolean {
+    return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  }
+
   load(url: string): Promise<void> {
     this.endSilence();
-    if (this.audio.src === url && this.audio.readyState >= 2) {
+    this.playToken++;
+    // Same file again (repetition with no pause): rewinding is instant — but only while the page
+    // is visible. With the screen off, Android Chrome can leave play() on a rewound, ended element
+    // pending forever, so the file is loaded afresh instead (from the HTTP cache / offline blob).
+    if (this.audio.src === url && this.audio.readyState >= 2 && !this.pageHidden()) {
       this.audio.currentTime = 0;
       return Promise.resolve();
     }
+    return this.reload(url);
+  }
+
+  private reload(url: string): Promise<void> {
     this.loading = true;
     return new Promise((resolve, reject) => {
       const done = (err?: Error) => {
@@ -118,13 +135,66 @@ export class HtmlAudioBackend implements AudioBackend {
     });
   }
 
+  /**
+   * Starts playback. If play() has not started within playStartMs (seen on Android with the screen
+   * off: the promise stays pending, no sound, no error), the same file is reloaded at the same
+   * position and played once more; if that also hangs, it rejects so the player shows an error
+   * with Retry instead of hanging silently in "playing".
+   */
   async play() {
-    await this.audio.play();
+    const token = ++this.playToken;
+    if (await this.startWithin(token)) return;
+    if (token !== this.playToken) return;
+    const src = this.audio.src;
+    const at = this.audio.currentTime;
+    const rate = this.audio.playbackRate;
+    await this.reload(src);
+    if (token !== this.playToken) return; // paused / stopped / moved on while reloading
+    try {
+      if (at > 0.3 && at < (this.audio.duration || Infinity)) this.audio.currentTime = at;
+    } catch {
+      /* seek not possible: restart the file */
+    }
+    this.setRate(rate);
+    if (await this.startWithin(token)) return;
+    if (token !== this.playToken) return;
+    throw new Error('playback did not start (the phone may have paused the audio in the background)');
   }
+
+  /** True once play() resolved; false if it was still pending after playStartMs. Rethrows play() errors. */
+  private startWithin(token: number): Promise<boolean> {
+    return new Promise<boolean>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, this.playStartMs);
+      this.audio.play().then(
+        () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(true);
+        },
+        (e: unknown) => {
+          if (settled) return; // a late rejection after we gave up (e.g. aborted by the reload)
+          settled = true;
+          clearTimeout(timer);
+          // Superseded by pause/stop/another load: not an error for this attempt.
+          if (token !== this.playToken) resolve(true);
+          else reject(e instanceof Error ? e : new Error(String(e)));
+        },
+      );
+    });
+  }
+
   pause() {
+    this.playToken++;
     this.audio.pause();
   }
   stop() {
+    this.playToken++;
     this.endSilence();
     this.audio.pause();
     try {
