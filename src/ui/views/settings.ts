@@ -113,9 +113,10 @@ function audioSection(app: App): HTMLElement {
     'audio',
     t('set.audio'),
     h('p', { class: 'muted' }, t('set.audioHelp')),
-    h(
-      'div',
-      { role: 'radiogroup', 'aria-label': t('ses.reciter') },
+    h('details', { open: false },
+      h('summary', null, t('ses.reciter')),
+      h('div',
+        { role: 'radiogroup', 'aria-label': t('ses.reciter') },
       app.reciters().map((r) => {
         const out = h('small', { class: 'muted' });
         return h(
@@ -130,25 +131,27 @@ function audioSection(app: App): HTMLElement {
       }),
     ),
     h('p', null, h('small', { class: 'muted' }, reciterAttribution(app.reciter()))),
-    h('h3', { style: { 'margin-top': '1rem' } }, t('set.addSource')),
-    h('p', { class: 'muted' }, t('set.addSourceHelp')),
-    h('div', { class: 'fields' }, h('label', { class: 'field' }, h('span', null, t('set.name')), name), h('label', { class: 'field', style: { 'grid-column': '1 / -1' } }, h('span', null, t('set.template')), template)),
-    h('button', {
-      type: 'button', style: { 'margin-top': '0.5rem' },
-      onclick: () => void app.act(async () => {
-        if (!name.value.trim()) throw new LocalizedError(t('error.reciterName'));
-        try {
-          validateTemplate(template.value.trim());
-        } catch (e) {
-          throw e instanceof TemplateError ? e : new TemplateError('Invalid template.');
-        }
-        const id = `custom-${name.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'source'}-${Date.now().toString(36)}`;
-        const r = { id, name: name.value.trim(), nameArabic: '', style: 'murattal' as const, host: 'custom' as const, urlTemplate: template.value.trim(), verification: 'user' as const, attribution: 'Custom audio source added by you.' };
-        await app.savePrefs({ ...app.prefs, customReciters: [...app.prefs.customReciters, r], reciterId: id });
-        app.render(true);
-      }, t('set.sourceAdded')),
-    }, t('set.addSourceBtn')),
-    h('h3', { style: { 'margin-top': '1rem' } }, t('set.offlineAudio')),
+    ),
+    h('details', { open: false },
+      h('summary', null, t('set.addSource')),
+      h('p', { class: 'muted' }, t('set.addSourceHelp')),
+      h('div', { class: 'fields' }, h('label', { class: 'field' }, h('span', null, t('set.name')), name), h('label', { class: 'field', style: { 'grid-column': '1 / -1' } }, h('span', null, t('set.template')), template)),
+      h('button', {
+        type: 'button', style: { 'margin-top': '0.5rem' },
+        onclick: () => void app.act(async () => {
+          if (!name.value.trim()) throw new LocalizedError(t('error.reciterName'));
+          try {
+            validateTemplate(template.value.trim());
+          } catch (e) {
+            throw e instanceof TemplateError ? e : new TemplateError('Invalid template.');
+          }
+          const id = `custom-${name.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'source'}-${Date.now().toString(36)}`;
+          const r = { id, name: name.value.trim(), nameArabic: '', style: 'murattal' as const, host: 'custom' as const, urlTemplate: template.value.trim(), verification: 'user' as const, attribution: 'Custom audio source added by you.' };
+          await app.savePrefs({ ...app.prefs, customReciters: [...app.prefs.customReciters, r], reciterId: id });
+          app.render(true);
+        }, t('set.sourceAdded')),
+      }, t('set.addSourceBtn')),
+    ),    h('h3', { style: { 'margin-top': '1rem' } }, t('set.offlineAudio')),
     h('div', { class: 'row' }, usage, h('button', { type: 'button', class: 'quiet', onclick: async () => { await app.deps.audioCache.clear(); app.render(true); } }, t('set.deleteOffline'))),
   );
 }
@@ -374,7 +377,7 @@ function settingsNav(sections: {id:string, title:string}[]) {
   return h('nav', { class: 'settings-nav' },
     h('ul', null,
       ...sections.map(s => h('li', null,
-        h('a', { href: `#settings-${s.id}` }, s.title)
+        h('a', { href: `#/settings?section=${s.id}` }, s.title)
       ))
     )
   );
@@ -404,12 +407,27 @@ export function settingsView(app: App): Node {
         h('div', { class: 'stack' },
           accountSection(app),
           section('language', t('set.language'), h('p', { class: 'muted' }, t('set.languageHelp')), app.languageSwitch()),
-          quranDataSection(app),
+          h('details', { open: false },
+      h('summary', null, t('set.data')),
+      quranDataSection(app)
+    ),
           audioSection(app),
-          playbackSection(app),
-          appearanceSection(app),
-          remindersSection(app),
-          privacySection(app),
+          h('details', { open: false },
+      h('summary', null, t('set.playback')),
+      playbackSection(app)
+    ),
+          h('details', { open: false },
+      h('summary', null, t('set.appearance')),
+      appearanceSection(app)
+    ),
+          h('details', { open: false },
+      h('summary', null, t('set.reminders')),
+      remindersSection(app)
+    ),
+          h('details', { open: false },
+      h('summary', null, t('set.privacy')),
+      privacySection(app)
+    ),
           section('about', t('set.about'), h('p', null, t('set.aboutP1')), h('p', { class: 'muted' }, t('set.aboutP2'))),
         )
       )
