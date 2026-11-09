@@ -57,17 +57,18 @@ function quranDataSection(app: App): HTMLElement {
   return section(
     'data',
     tr('set.data'),
-    h(
-      'dl',
-      { class: 'kv' },
-      h('dt', null, tr('set.textStyle')), h('dd', null, t ? h('span', { dir: 'auto' }, t.label) : tr('set.dNotDownloaded')),
-      h('dt', null, tr('set.font')), h('dd', null, tr('set.fontKfgqpc')),
-      t ? [h('dt', null, tr('set.dSource')), h('dd', null, h('a', { href: t.source.url, rel: 'noopener', target: '_blank' }, t.source.name), h('br'), h('small', null, t.source.license))] : null,
-      t?.source.retrievedAt ? [h('dt', null, tr('set.dDownloaded')), h('dd', null, formatDateTime(t.source.retrievedAt))] : null,
-      t?.sha256 ? [h('dt', null, 'SHA-256'), h('dd', null, h('code', { dir: 'ltr', style: { 'word-break': 'break-all', 'font-size': '0.8rem' } }, t.sha256))] : null,
-      h('dt', null, tr('set.dDivisions')), h('dd', { dir: 'auto' }, d.label),
-      h('dt', null, tr('set.dAvailable')), h('dd', null, (['juz', 'hizb', 'quarter', 'page'] as const).map((k) => `${kindName(k)} ${q.index.has(k) ? fmtNum(q.index.count(k)) : tr('set.dAvailNo')}`).join(tr('common.listSep'))),
-      h('dt', null, tr('set.dVerification')), h('dd', null, q.validation.ok ? tr('set.dPassed') : h('span', { dir: 'auto' }, q.validation.errors.join(' '))),
+    h('details', { open: false },
+      h('summary', null, 'Data details'),
+      h('dl', { class: 'kv' },
+        h('dt', null, tr('set.textStyle')), h('dd', null, t ? h('span', { dir: 'auto' }, t.label) : tr('set.dNotDownloaded')),
+        h('dt', null, tr('set.font')), h('dd', null, tr('set.fontKfgqpc')),
+        ...(t ? [h('dt', null, tr('set.dSource')), h('dd', null, h('a', { href: t.source.url, rel: 'noopener', target: '_blank' }, t.source.name), h('br'), h('small', null, t.source.license))] : []),
+        ...(t?.source.retrievedAt ? [h('dt', null, tr('set.dDownloaded')), h('dd', null, formatDateTime(t.source.retrievedAt))] : []),
+        ...(t?.sha256 ? [h('dt', null, 'SHA-256'), h('dd', null, h('code', { dir: 'ltr', style: { 'word-break': 'break-all', 'font-size': '0.8rem' } }, t.sha256))] : []),
+        h('dt', null, tr('set.dDivisions')), h('dd', { dir: 'auto' }, d.label),
+        h('dt', null, tr('set.dAvailable')), h('dd', null, (['juz', 'hizb', 'quarter', 'page'] as const).map((k) => `${kindName(k)} ${q.index.has(k) ? fmtNum(q.index.count(k)) : tr('set.dAvailNo')}`).join(tr('common.listSep'))),
+        h('dt', null, tr('set.dVerification')), h('dd', null, q.validation.ok ? tr('set.dPassed') : h('span', { dir: 'auto' }, q.validation.errors.join(' ')))
+      )
     ),
     h('p', { class: 'muted' }, tr('set.dataHelp'), ANCHOR_SOURCES.map((s, i) => [i ? tr('common.listSep') : '', h('a', { href: s.url, rel: 'noopener', target: '_blank' }, s.label)]), '.'),
     h('p', { class: 'muted' }, tr('set.textFixed')),
@@ -369,25 +370,49 @@ function privacySection(app: App): HTMLElement {
   );
 }
 
+function settingsNav(sections: {id:string, title:string}[]) {
+  return h('nav', { class: 'settings-nav' },
+    h('ul', null,
+      ...sections.map(s => h('li', null,
+        h('a', { href: `#settings-${s.id}` }, s.title)
+      ))
+    )
+  );
+}
+
 export function settingsView(app: App): Node {
   const focus = app.route.params.get('section');
   // Run after the route has rendered this view (a microtask fires before the view is in the document,
   // so a link such as the reader's "Download Quran data" would land on the page top instead).
   if (focus) setTimeout(() => document.getElementById(`settings-${focus}`)?.scrollIntoView({ block: 'start' }), 0);
-  return h(
-    'div',
-    null,
+  const navSections = [
+    {id: 'account', title: t('acct.title')},
+    {id: 'language', title: t('set.language')},
+    {id: 'data', title: tr('set.data')},
+    {id: 'audio', title: t('set.audio')},
+    {id: 'playback', title: t('set.playback')},
+    {id: 'appearance', title: t('set.appearance')},
+    {id: 'reminders', title: t('set.reminders')},
+    {id: 'privacy', title: t('set.privacy')},
+    {id: 'about', title: t('set.about')},
+  ];
+  return h('div', null,
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, t('set.title')))),
-    h('div', { class: 'stack' },
-      accountSection(app),
-      section('language', t('set.language'), h('p', { class: 'muted' }, t('set.languageHelp')), app.languageSwitch()),
-      quranDataSection(app),
-      audioSection(app),
-      playbackSection(app),
-      appearanceSection(app),
-      remindersSection(app),
-      privacySection(app),
-      section('about', t('set.about'), h('p', null, t('set.aboutP1')), h('p', { class: 'muted' }, t('set.aboutP2'))),
-    ),
+    h('div', { class: 'settings-container' },
+      settingsNav(navSections),
+      h('div', { class: 'settings-content' },
+        h('div', { class: 'stack' },
+          accountSection(app),
+          section('language', t('set.language'), h('p', { class: 'muted' }, t('set.languageHelp')), app.languageSwitch()),
+          quranDataSection(app),
+          audioSection(app),
+          playbackSection(app),
+          appearanceSection(app),
+          remindersSection(app),
+          privacySection(app),
+          section('about', t('set.about'), h('p', null, t('set.aboutP1')), h('p', { class: 'muted' }, t('set.aboutP2'))),
+        )
+      )
+    )
   );
 }
