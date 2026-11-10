@@ -11,13 +11,29 @@ app aligns from the transcript alone. Nothing is written to disk and nothing is 
     python scripts/asr_server.py              # downloads the model once from Hugging Face
     python scripts/asr_server.py --nemo path/to/model.nemo   # fully offline
 
+Sharing it with approved users (public, through a tunnel such as Cloudflare Tunnel):
+
+    python scripts/asr_server.py --allow-origin https://mo-meg.github.io \
+        --supabase-url https://<project>.supabase.co --supabase-anon-key <anon key>
+    cloudflared tunnel --url http://127.0.0.1:8765
+
+With --supabase-url set, /transcribe needs a signed-in user's token (Authorization: Bearer) and
+only the admin or users approved in the Supabase table recitation_access are served. The server
+still listens on 127.0.0.1 only; the tunnel is what makes it reachable. Without the flag it is
+open to anything that can reach it, so never tunnel it in that mode.
+
 Model licence: CC BY 4.0 (attribution required; see the model card).
 """
 import argparse
 import io
 import json
+import os
 import sys
 import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -32,6 +48,59 @@ RATE = 16000
 PAD_S = 0.4
 state = {"model": None, "error": None, "stride": 0.04}
 lock = threading.Lock()
+
+ADMIN_EMAIL = "mmm_megahed@hotmail.com"  # keep in sync with supabase/recitation_access.sql
+AUTH_TTL_S = 60  # how long an "approved" answer is trusted before Supabase is asked again
+auth_cache = {}  # token -> (expires_at, user_id or None)
+hits = {}  # user_id -> recent request times (rate limit)
+cache_lock = threading.Lock()
+
+
+def _supabase_get(cfg, path, token):
+    req = urllib.request.Request(cfg["url"] + path, headers={"apikey": cfg["key"], "Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310 (https URL from the operator)
+        return json.loads(r.read().decode("utf-8") or "null")
+
+
+def authorize(cfg, header):
+    """Returns the user id when the bearer token belongs to the admin or an approved user, else None."""
+    if not header or not header.lower().startswith("bearer "):
+        return None
+    token = header[7:].strip()
+    now = time.time()
+    with cache_lock:
+        hit = auth_cache.get(token)
+        if hit and hit[0] > now:
+            return hit[1]
+    uid = None
+    try:
+        user = _supabase_get(cfg, "/auth/v1/user", token)
+        if user and user.get("id") and user.get("email_confirmed_at"):
+            if str(user.get("email", "")).lower() == cfg["admin"]:
+                uid = user["id"]
+            else:
+                rows = _supabase_get(cfg, "/rest/v1/recitation_access?select=status&user_id=eq." + urllib.parse.quote(user["id"]), token)
+                if rows and rows[0].get("status") == "approved":
+                    uid = user["id"]
+    except (urllib.error.URLError, ValueError, OSError):
+        uid = None  # fail closed
+    with cache_lock:
+        if len(auth_cache) > 2000:
+            auth_cache.clear()
+        auth_cache[token] = (now + AUTH_TTL_S, uid)
+    return uid
+
+
+def rate_ok(uid, limit):
+    now = time.time()
+    with cache_lock:
+        q = [t for t in hits.get(uid, []) if now - t < 60]
+        if len(q) >= limit:
+            hits[uid] = q
+            return False
+        q.append(now)
+        hits[uid] = q
+        return True
 
 
 def load(args):
@@ -116,7 +185,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", self.server.allow_origin)
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Private-Network", "true")
 
@@ -136,6 +205,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         if state["model"] is None:
             return self._send(503, {"error": state["error"] or "Model is still loading"})
+        cfg = self.server.auth
+        if cfg:  # shared mode: check the user before reading any audio
+            uid = authorize(cfg, self.headers.get("Authorization"))
+            if uid is None:
+                return self._send(401, {"error": "sign in and ask the admin for access"})
+            if not rate_ok(uid, self.server.rate):
+                return self._send(429, {"error": "too many requests, slow down"})
         try:
             n = int(self.headers.get("Content-Length", "0"))
             if n <= 44 or n > RATE * 2 * 60:
@@ -159,11 +235,24 @@ def main():
     p.add_argument("--decoder", choices=["rnnt", "ctc"], default="rnnt", help="hybrid model head (ctc is faster on CPU)")
     p.add_argument("--device", default=None, help="cpu or cuda (default: automatic)")
     p.add_argument("--allow-origin", default="*", help="CORS origin of the app, e.g. https://you.github.io")
+    p.add_argument("--supabase-url", default=os.environ.get("HAFEEZ_SUPABASE_URL"), help="enable access control (shared mode)")
+    p.add_argument("--supabase-anon-key", default=os.environ.get("HAFEEZ_SUPABASE_ANON_KEY"))
+    p.add_argument("--admin-email", default=ADMIN_EMAIL)
+    p.add_argument("--rate", type=int, default=90, help="max transcribe requests per user per minute (shared mode)")
     args = p.parse_args()
+    auth = None
+    if args.supabase_url:
+        if not args.supabase_anon_key:
+            sys.exit("--supabase-anon-key is required together with --supabase-url")
+        if args.allow_origin == "*":
+            print("Warning: shared mode with --allow-origin * ; set your site, e.g. https://mo-meg.github.io", file=sys.stderr)
+        auth = {"url": args.supabase_url.rstrip("/"), "key": args.supabase_anon_key, "admin": args.admin_email.lower()}
     threading.Thread(target=load, args=(args,), daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     srv.allow_origin = args.allow_origin
-    print(f"Recitation recognition server on http://127.0.0.1:{args.port} (local only)", file=sys.stderr)
+    srv.auth = auth
+    srv.rate = args.rate
+    print(f"Recitation recognition server on http://127.0.0.1:{args.port} ({'shared: sign-in + approval required' if auth else 'local only, no sign-in'})", file=sys.stderr)
     srv.serve_forever()
 
 

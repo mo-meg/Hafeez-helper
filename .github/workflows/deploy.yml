@@ -2,6 +2,7 @@
 # Setup (once): Settings → Pages → Source: "GitHub Actions".
 # Cloud accounts (optional): Settings → Secrets and variables → Actions → Variables:
 #   HAFEEZ_SUPABASE_URL, HAFEEZ_SUPABASE_ANON_KEY  (both public values; see docs/DEPLOY.md)
+#   HAFEEZ_ASR_URL (optional, public URL of the shared recognition server; see docs/RECITATION.md)
 # Without them the site is built in local-only mode (no sign-in).
 name: Deploy to GitHub Pages
 
@@ -36,6 +37,7 @@ jobs:
         env:
           HAFEEZ_SUPABASE_URL: ${{ vars.HAFEEZ_SUPABASE_URL }}
           HAFEEZ_SUPABASE_ANON_KEY: ${{ vars.HAFEEZ_SUPABASE_ANON_KEY }}
+          HAFEEZ_ASR_URL: ${{ vars.HAFEEZ_ASR_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

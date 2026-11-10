@@ -19,6 +19,8 @@ try {
 const cloudDefine = {
   __CLOUD_URL__: JSON.stringify(process.env.HAFEEZ_SUPABASE_URL ?? ''),
   __CLOUD_ANON_KEY__: JSON.stringify(process.env.HAFEEZ_SUPABASE_ANON_KEY ?? ''),
+  // Public address of the shared recognition server (e.g. a Cloudflare Tunnel URL). Empty = local only.
+  __ASR_URL__: JSON.stringify(process.env.HAFEEZ_ASR_URL ?? ''),
 };
 const harness = args.has('--harness');
 

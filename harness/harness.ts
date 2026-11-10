@@ -4,6 +4,7 @@
  * Results are rendered at the top of the page and in document.title ("HARNESS PASS n/n").
  * Build: npm run test:e2e  → open dist-harness/harness.html in a browser.
  */
+import { RecitationAccess } from '../src/core/recitation/access.ts';
 import '../src/ui/styles.css';
 import { AudioCache } from '../src/browser/audioCache.ts';
 import { createIdbStore } from '../src/browser/idbStore.ts';
@@ -847,7 +848,7 @@ async function run() {
     const mgr = new SessionManager({ client: authClient, session: s, onChange: () => {}, onExpired: () => {} });
     const engine = new SyncEngine({ base: createMemoryStore(), remote: new SupabaseRecords(CLOUD, cloud.fetch, mgr), debounceMs: 50 });
     await engine.init();
-    const account: AccountController = { email: s.user.email, sync: engine, sessionEnded: false, onSessionEnded: () => {}, signOut: async () => {}, signInAgain: () => {}, deleteAccount: () => engine.deleteAccount(), changePassword: async () => {} };
+    const account: AccountController = { email: s.user.email, sync: engine, recitationAccess: new RecitationAccess(CLOUD, cloud.fetch, mgr), accessToken: () => mgr.accessToken(), sessionEnded: false, onSessionEnded: () => {}, signOut: async () => {}, signInAgain: () => {}, deleteAccount: () => engine.deleteAccount(), changePassword: async () => {} };
     const services = createServices({ store: engine.store, clock: systemClock, ids: randomIds, fetcher: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
     app = new App({ services, audioBackend: audio, audioCache: new AudioCache(engine.store.audio), isOnline: () => true, fixture: { text: syntheticText(), divisions: syntheticDivisions({ withPages: true }) }, enableReminders: false, account });
     await app.start(root);

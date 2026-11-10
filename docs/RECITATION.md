@@ -127,3 +127,19 @@ global → focused, page boundary, substitution, omission, repetition, self-corr
 uncertainty, hesitation, loss and recovery, preamble, chunking (incl. closing after a length cut
 and soft speech), pause/resume, microphone/model/engine failures, silence, duplicate-free saving.
 `tests/data/recitation.datatest.ts` checks identification on the real KFGQPC text.
+
+## Sharing the tracker with approved users (public site)
+
+The site (GitHub Pages) only serves the app; the model runs on your computer and is exposed through a tunnel. Only the admin (`mmm_megahed@hotmail.com`) and users the admin approves in the app can use it. Local testing is unchanged.
+
+1. **Supabase, once:** run `supabase/recitation_access.sql` in the SQL editor. (The admin email is set there, in `src/core/recitation/access.ts` and in `scripts/asr_server.py`. Keep "Confirm email" enabled in Supabase Auth, since the admin is identified by a confirmed email.)
+2. **Start the server in shared mode** (it still listens on 127.0.0.1 only):
+   `python scripts/asr_server.py --allow-origin https://mo-meg.github.io --supabase-url https://<project>.supabase.co --supabase-anon-key <anon key>`
+   Without `--supabase-url` there is no sign-in check, so never tunnel it in that mode.
+3. **Open the tunnel:** `cloudflared tunnel --url http://127.0.0.1:8765` and copy the `https://….trycloudflare.com` address (a named tunnel keeps the address stable).
+4. **Tell the site the address:** set the repository variable `HAFEEZ_ASR_URL` (Settings → Secrets and variables → Actions → Variables) and re-run the deploy workflow. For a local build put `HAFEEZ_ASR_URL=…` in `.env`.
+5. **Approve users:** they open Recitation tracker → "Request access". You see the requests on the same page (admin only) and press Approve / Deny / Revoke. Approval takes effect within about a minute.
+
+How it is protected: the browser sends the user's Supabase token; the server asks Supabase who the user is and whether `recitation_access.status = 'approved'` (row-level security stops users approving themselves), fails closed if Supabase is unreachable, and limits each user to 90 requests a minute (`--rate`). The tracker works only while your computer is on and the tunnel is running. For local testing, run the server without the flags and leave `HAFEEZ_ASR_URL` unset: the app then uses `http://127.0.0.1:8765` and needs no sign-in. Users can also pick their own local server under "Recognition engine".
+
+Privacy: with the shared server, recitation audio travels to your computer for recognition and is not stored. The app says so on the page.

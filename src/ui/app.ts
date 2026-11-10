@@ -47,6 +47,8 @@ export interface AppDeps {
   readonly storageError?: string;
   /** Signed-in account with cloud sync; absent in local-only and guest mode. */
   readonly account?: AccountController;
+  /** Public address of the shared recognition server (empty: only a local server is offered). */
+  readonly asrUrl?: string;
   /** Shows the sign-in screen again after continuing as a guest. */
   readonly guestSignIn?: () => void;
   /** Called when the interface language changes (remembered for the sign-in screen). */
