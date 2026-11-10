@@ -2,6 +2,7 @@ import { DEFAULT_ASR_ENDPOINT, LocalAsrEngine } from '../../browser/localAsrEngi
 import { MicError, startMicrophone, type MicSession } from '../../browser/micCapture.ts';
 import { RecitationController, type RecitationState } from '../../core/recitation/controller.ts';
 import { RecitationCorpus } from '../../core/recitation/corpus.ts';
+import type { AccessRequest, AccessStatus } from '../../core/recitation/access.ts';
 import { isLocalEndpoint } from '../../core/recitation/engine.ts';
 import { categoryFor, DEFAULT_SAVE_KINDS, RecitationMistakeBridge } from '../../core/recitation/mistakeBridge.ts';
 import { RecitationTracker, type Finding, type WordStatus } from '../../core/recitation/tracker.ts';
@@ -25,6 +26,11 @@ interface Live {
   host: HTMLElement | null;
   /** Memorisation mode: words not yet recited are hidden. */
   hide: boolean;
+  /** Access to the shared online server (only meaningful when that server is the chosen engine). */
+  access: AccessStatus | 'loading' | 'error';
+  accessLoaded: boolean;
+  /** Admin only: everybody who asked for access. */
+  requests: AccessRequest[] | null;
 }
 let live: Live | null = null;
 
@@ -32,12 +38,72 @@ function ensureLive(app: App): Live | null {
   const text = app.quran.text;
   if (!text) return null;
   if (!live || live.corpus.edition !== text.edition) {
-    live = { corpus: new RecitationCorpus(text, app.quran.index), controller: null, mic: null, state: null, bridge: null, selected: new Set(), endpoint: DEFAULT_ASR_ENDPOINT, host: null, hide: false };
+    live = { corpus: new RecitationCorpus(text, app.quran.index), controller: null, mic: null, state: null, bridge: null, selected: new Set(), endpoint: sharedUrl(app) || DEFAULT_ASR_ENDPOINT, host: null, hide: false, access: 'loading', accessLoaded: false, requests: null };
     void app.s.store.settings.get<string>(ENDPOINT_KEY).then((v) => {
-      if (live && v) live.endpoint = v;
+      if (live && v && (isLocalEndpoint(v) || sameUrl(v, sharedUrl(app)))) live.endpoint = v;
+      if (live) void refreshAccess(app, live);
     });
   }
   return live;
+}
+
+const trimUrl = (u: string) => u.trim().replace(/\/+$/, '');
+const sameUrl = (a: string, b: string) => !!b && trimUrl(a) === trimUrl(b);
+/** The shared server is offered only to signed-in users of a build that has its address. */
+function sharedUrl(app: App): string {
+  return app.deps.account && app.deps.asrUrl ? trimUrl(app.deps.asrUrl) : '';
+}
+const usesShared = (app: App, l: Live) => sameUrl(l.endpoint, sharedUrl(app));
+
+async function refreshAccess(app: App, l: Live): Promise<void> {
+  const acc = app.deps.account?.recitationAccess;
+  if (!acc || !usesShared(app, l)) return;
+  l.access = 'loading';
+  try {
+    l.access = await acc.myStatus();
+    l.requests = acc.isAdmin ? await acc.list() : null;
+    l.accessLoaded = true;
+  } catch {
+    l.access = 'error';
+  }
+  paint(app, l);
+}
+
+async function accessAction(app: App, l: Live, fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    app.toast(errorText(e), 'error');
+  }
+  await refreshAccess(app, l);
+}
+
+function accessPanel(app: App, l: Live): Node | null {
+  const acc = app.deps.account?.recitationAccess;
+  if (!acc || !usesShared(app, l)) return null;
+  const mine: Child[] = [];
+  if (l.access === 'loading') mine.push(h('p', { class: 'muted' }, t('rec.access.loading')));
+  else if (l.access === 'error') mine.push(h('p', { class: 'notice warn' }, t('rec.access.error')), h('button', { type: 'button', onclick: () => void refreshAccess(app, l) }, t('rec.access.retry')));
+  else if (l.access === 'none') mine.push(h('p', null, t('rec.access.none')), h('button', { type: 'button', class: 'primary', 'data-key': 'rec-request', onclick: () => void accessAction(app, l, () => acc.request()) }, t('rec.access.request')));
+  else if (l.access === 'pending') mine.push(h('p', { class: 'notice' }, t('rec.access.pending')), h('button', { type: 'button', onclick: () => void refreshAccess(app, l) }, t('rec.access.check')));
+  else if (l.access === 'denied') mine.push(h('p', { class: 'notice warn' }, t('rec.access.denied')));
+  const admin = acc.isAdmin ? adminList(app, l, acc) : null;
+  return h('div', { class: 'panel' }, l.access === 'approved' ? null : h('h2', null, t('rec.access.title')), ...mine, admin);
+}
+
+function adminList(app: App, l: Live, acc: NonNullable<App['deps']['account']>['recitationAccess']): HTMLElement {
+  const rows = l.requests ?? [];
+  const btn = (r: AccessRequest, to: 'approved' | 'denied' | 'pending', label: MessageKey) =>
+    h('button', { type: 'button', 'data-key': `rec-${to}`, onclick: () => void accessAction(app, l, () => acc.decide(r.userId, to, app.now())) }, t(label));
+  return h('details', { class: 'rec-admin', open: rows.some((r) => r.status === 'pending') },
+    h('summary', null, t('rec.access.admin'), ` (${fmtNum(rows.filter((r) => r.status === 'pending').length)})`),
+    rows.length === 0 ? h('p', { class: 'muted' }, t('rec.access.noRequests')) : null,
+    ...rows.map((r) => h('div', { class: 'row' },
+      h('span', { dir: 'ltr' }, r.email || r.userId),
+      h('span', { class: 'muted' }, t(`rec.access.s.${r.status}` as MessageKey)),
+      r.status !== 'approved' ? btn(r, 'approved', 'rec.access.approve') : null,
+      r.status === 'pending' ? btn(r, 'denied', 'rec.access.deny') : null,
+      r.status === 'approved' ? btn(r, 'denied', 'rec.access.revoke') : null)));
 }
 
 export function reciteView(app: App): Node {
@@ -52,7 +118,7 @@ export function reciteView(app: App): Node {
 function paint(app: App, l: Live): void {
   if (!l.host) return;
   const st = l.state;
-  replaceChildren(l.host, controls(app, l, st), st ? locationBar(l, st) : null, st ? textPanel(l, st) : null, legend(), st && (st.status === 'stopped' || st.status === 'error') ? summary(app, l, st) : null, engineSettings(app, l));
+  replaceChildren(l.host, accessPanel(app, l), controls(app, l, st), st ? locationBar(l, st) : null, st ? textPanel(l, st) : null, legend(), st && (st.status === 'stopped' || st.status === 'error') ? summary(app, l, st) : null, engineSettings(app, l));
 }
 
 // ------------------------------------------------------------------ controls
@@ -65,6 +131,7 @@ function statusText(st: RecitationState | null): string {
 }
 
 function controls(app: App, l: Live, st: RecitationState | null): HTMLElement {
+  const blocked = usesShared(app, l) && l.access !== 'approved';
   const active = st?.status === 'listening' || st?.status === 'loading' || st?.status === 'stopping';
   return h(
     'div',
@@ -72,7 +139,7 @@ function controls(app: App, l: Live, st: RecitationState | null): HTMLElement {
     h('div', { class: 'row' },
       active
         ? h('button', { type: 'button', class: 'primary', 'data-key': 'rec-stop', disabled: st?.status === 'stopping', onclick: () => void stop(app, l) }, t('rec.stop'))
-        : h('button', { type: 'button', class: 'primary', 'data-key': 'rec-start', onclick: () => void start(app, l) }, t('rec.start')),
+        : h('button', { type: 'button', class: 'primary', 'data-key': 'rec-start', disabled: blocked, onclick: () => void start(app, l) }, t('rec.start')),
       h('span', { class: `rec-dot ${st?.status === 'listening' ? (st.silent ? 'idle' : 'on') : ''}`, 'aria-hidden': 'true' }),
       h('span', { role: 'status', 'aria-live': 'polite', class: st?.status === 'error' ? 'rec-error' : '' }, statusText(st)),
       st?.status === 'listening'
@@ -87,18 +154,24 @@ function controls(app: App, l: Live, st: RecitationState | null): HTMLElement {
         h('span', { lang: 'ar', dir: 'rtl' }, `«${st.heard}»`),
         st.latencyMs !== null ? h('span', { class: 'muted rec-latency', dir: 'ltr' }, ` ${fmtNum(st.latencyMs)} ms`) : null)
       : null,
-    h('p', { class: 'muted' }, t('rec.privacy')),
+    h('p', { class: 'muted' }, t(usesShared(app, l) ? 'rec.privacyShared' : 'rec.privacy')),
   );
 }
 
 async function start(app: App, l: Live): Promise<void> {
-  if (!isLocalEndpoint(l.endpoint)) {
+  const shared = usesShared(app, l);
+  if (!shared && !isLocalEndpoint(l.endpoint)) {
     app.toast(t('rec.endpointLocalOnly'), 'error');
+    return;
+  }
+  const account = app.deps.account;
+  if (shared && (!account || l.access !== 'approved')) {
+    app.toast(t('rec.access.needed'), 'error');
     return;
   }
   const tracker = new RecitationTracker(l.corpus);
   const controller = new RecitationController({
-    engine: new LocalAsrEngine(l.endpoint),
+    engine: shared && account ? new LocalAsrEngine(l.endpoint, 15000, { allowRemote: true, token: () => account.accessToken() }) : new LocalAsrEngine(l.endpoint),
     tracker,
     onUpdate: (s) => {
       l.state = s;
@@ -221,14 +294,16 @@ function engineSettings(app: App, l: Live): HTMLElement {
   const msg = h('span', { class: 'muted', role: 'status' });
   const saveEndpoint = async () => {
     const v = input.value.trim();
-    if (!isLocalEndpoint(v)) {
+    const shared = sameUrl(v, sharedUrl(app));
+    if (!shared && !isLocalEndpoint(v)) {
       msg.textContent = t('rec.endpointLocalOnly');
       return;
     }
     l.endpoint = v;
     await app.s.store.settings.set(ENDPOINT_KEY, v);
+    void refreshAccess(app, l);
     try {
-      await new LocalAsrEngine(v).load();
+      await new LocalAsrEngine(v, 15000, { allowRemote: shared }).load();
       msg.textContent = t('rec.engineOk');
     } catch (e) {
       msg.textContent = errorText(e);
