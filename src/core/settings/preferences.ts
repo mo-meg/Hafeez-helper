@@ -65,12 +65,12 @@ export const PreferencesSchema = z.object({
 export type Preferences = z.infer<typeof PreferencesSchema>;
 
 export const DEFAULT_REPEAT: RepeatConfig = {
-  ayahRepeat: 3,
+  ayahRepeat: 1,
   groupRepeat: 1,
   playlistRepeat: 1,
   repeatContext: false,
-  pauseBetweenRepetitionsMs: 1500,
-  pauseBetweenAyatMs: 2500,
+  pauseBetweenRepetitionsMs: 0,
+  pauseBetweenAyatMs: 0,
   playbackRate: 1,
 };
 

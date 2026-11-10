@@ -21,6 +21,13 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   Navigate by surah, ayah, juz, hizb, quarter and page. A division panel
   shows the exact start and end of the portion, its quarters with their starting
   ayat, your reading position, and how many mistakes are marked, unresolved and resolved there.
+* **Recitation tracker** (optional, local AI): recite from memory and the app finds your place
+  in the whole Quran, follows you word by word on the mushaf page, and flags different, skipped
+  or repeated words and long pauses. A short confirmation window lets you correct yourself; words
+  not heard clearly are never counted as mistakes. You choose which findings to save as mistakes.
+  Speech recognition runs on your own computer with the FastConformer Quran model
+  (`python scripts/asr_server.py`, model licence CC BY 4.0); audio is never stored or sent online. See
+  [docs/RECITATION.md](docs/RECITATION.md).
 * **Mistake marking**: tap a word, or an ayah number for the whole ayah. Choose a type (forgotten,
   hesitation, incorrect word, similar ayah, ayah ending, tajweed, other), severity, confidence,
   "confused with", and a private note. Tapping the **first word** of an ayah pre-selects

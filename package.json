@@ -16,6 +16,8 @@
     "lint": "node scripts/lint.mjs",
     "test": "node --test --test-reporter=spec \"tests/**/*.test.ts\"",
     "test:data": "node --test --test-reporter=spec tests/data/*.datatest.ts",
+    "test:audio": "node scripts/recitation-audio-check.ts",
+    "test:recording": "node scripts/recitation-file-check.ts",
     "test:e2e": "node scripts/build.mjs --harness && node scripts/serve.mjs --check-harness",
     "data:fetch": "node scripts/fetch-quran-data.ts",
     "data:import": "node scripts/import-kfgqpc.ts",

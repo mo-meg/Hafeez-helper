@@ -15,7 +15,7 @@ export default async function run(page, ui) {
 
   for (const sec of sections) {
     // Click the navigation link by href
-    const link = page.locator(`a[href="#settings-${sec.id}"]`);
+    const link = page.locator(`a[href="#/settings?section=${sec.id}"]`);
     await link.click();
 
     // Wait for the section to be visible
