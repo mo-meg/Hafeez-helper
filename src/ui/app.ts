@@ -24,6 +24,7 @@ import { dashboardView } from './views/dashboard.ts';
 import { mistakesView } from './views/mistakes.ts';
 import { progressView } from './views/progress.ts';
 import { quranView } from './views/quran.ts';
+import { reciteView } from './views/recite.ts';
 import { revisionView } from './views/revision.ts';
 import { sessionView } from './views/session.ts';
 import { settingsView } from './views/settings.ts';
@@ -55,10 +56,11 @@ export interface AppDeps {
   readonly enableReminders?: boolean;
 }
 
-export type RouteName = 'dashboard' | 'quran' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
+export type RouteName = 'dashboard' | 'quran' | 'recite' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
 const NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
   { name: 'dashboard', label: 'nav.dashboard', icon: 'dashboard' },
   { name: 'quran', label: 'nav.quran', icon: 'quran' },
+  { name: 'recite', label: 'nav.recite', icon: 'mic' },
   { name: 'revision', label: 'nav.revision', icon: 'revision' },
   { name: 'mistakes', label: 'nav.mistakes', icon: 'mistakes' },
   { name: 'test', label: 'nav.test', icon: 'test' },
@@ -298,6 +300,8 @@ export class App {
         return dashboardView(this);
       case 'quran':
         return quranView(this);
+      case 'recite':
+        return reciteView(this);
       case 'revision':
         return revisionView(this);
       case 'mistakes':

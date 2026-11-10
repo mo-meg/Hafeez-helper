@@ -38,7 +38,6 @@ export const BUILTIN_RECITERS: readonly ReciterSource[] = [
   { id: 'ayyoub-everyayah', name: 'Muhammad Ayyoub', nameArabic: 'محمد أيوب', style: 'murattal', host: 'everyayah', urlTemplate: ea('Muhammad_Ayyoub_128kbps'), verification: 'documented', attribution: EVERYAYAH_ATTR },
   { id: 'minshawy-murattal-everyayah', name: 'Mohamed Siddiq Al-Minshawi (Murattal)', nameArabic: 'محمد صديق المنشاوي (مرتل)', style: 'murattal', host: 'everyayah', urlTemplate: ea('Minshawy_Murattal_128kbps'), verification: 'unverified', attribution: EVERYAYAH_ATTR },
   { id: 'abdulbasit-murattal-everyayah', name: 'Abdul Basit Abdus Samad (Murattal)', nameArabic: 'عبد الباسط عبد الصمد (مرتل)', style: 'murattal', host: 'everyayah', urlTemplate: ea('Abdul_Basit_Murattal_192kbps'), verification: 'unverified', attribution: EVERYAYAH_ATTR },
-  { id: 'alafasy-everyayah', name: 'Mishary Rashid Alafasy', nameArabic: 'مشاري راشد العفاسي', style: 'murattal', host: 'everyayah', urlTemplate: ea('Alafasy_128kbps'), verification: 'unverified', attribution: EVERYAYAH_ATTR },
 ];
 
 export const DEFAULT_RECITER_ID = 'husary-murattal-everyayah';
