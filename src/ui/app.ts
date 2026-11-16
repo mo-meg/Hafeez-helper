@@ -59,7 +59,10 @@ export interface AppDeps {
 }
 
 export type RouteName = 'dashboard' | 'quran' | 'recite' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
-const NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
+declare const __RECITE_ENABLED__: boolean | undefined;
+/** The Recitation tracker needs a recognition server; production builds hide it (see scripts/build.mjs). */
+const RECITE_ENABLED = typeof __RECITE_ENABLED__ === 'boolean' && __RECITE_ENABLED__;
+const ALL_NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
   { name: 'dashboard', label: 'nav.dashboard', icon: 'dashboard' },
   { name: 'quran', label: 'nav.quran', icon: 'quran' },
   { name: 'recite', label: 'nav.recite', icon: 'mic' },
@@ -69,6 +72,7 @@ const NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> =
   { name: 'progress', label: 'nav.progress', icon: 'progress' },
   { name: 'settings', label: 'nav.settings', icon: 'settings' },
 ];
+const NAV = ALL_NAV.filter((n) => RECITE_ENABLED || n.name !== 'recite');
 
 /** A session title that is computed at render time, so it follows the interface language. */
 export type Title = () => string;

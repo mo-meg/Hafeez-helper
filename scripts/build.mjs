@@ -21,6 +21,9 @@ const cloudDefine = {
   __CLOUD_ANON_KEY__: JSON.stringify(process.env.HAFEEZ_SUPABASE_ANON_KEY ?? ''),
   // Public address of the shared recognition server (e.g. a Cloudflare Tunnel URL). Empty = local only.
   __ASR_URL__: JSON.stringify(process.env.HAFEEZ_ASR_URL ?? ''),
+  // The Recitation tracker needs a recognition server, so it is hidden in production builds.
+  // Shown in --watch (dev) builds, or when HAFEEZ_ENABLE_RECITE=1 is set.
+  __RECITE_ENABLED__: JSON.stringify(args.has('--watch') || process.env.HAFEEZ_ENABLE_RECITE === '1'),
 };
 const harness = args.has('--harness');
 
