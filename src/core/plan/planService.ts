@@ -78,6 +78,17 @@ export class PlanService {
     await this.store.plans.delete(id);
   }
 
+  /**
+   * Writes a revision schedule: a portion sets that date's revision plan, null makes it a rest day
+   * (removes the date's revision plan). Memorization plans are untouched.
+   */
+  async applySchedule(days: ReadonlyArray<{ date: string; scope: RevisionScope | null }>): Promise<void> {
+    for (const d of days) {
+      if (d.scope) await this.setPlan(d.date, d.scope, 'revision');
+      else await this.store.plans.delete(PlanService.planId(d.date, 'revision'));
+    }
+  }
+
   async setPlanStatus(id: string, status: DailyPlan['status']): Promise<DailyPlan> {
     const p = await this.store.plans.get(id);
     if (!p) throw new PlanError('Plan not found');

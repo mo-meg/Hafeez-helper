@@ -8,7 +8,7 @@ import { TemplateError, type ReciterSource } from '../../core/audio/reciters.ts'
 import { DataFormatError } from '../../core/data/alquranCloud.ts';
 import type { MistakeCategory, MistakeStatus, RecallOutcome, SessionMode } from '../../core/model.ts';
 import { DivisionUnavailableError, type DivisionIndex } from '../../core/quran/divisions.ts';
-import { normalizeScope, type RevisionScope } from '../../core/quran/scope.ts';
+import { divisionSpan, normalizeScope, type RevisionScope } from '../../core/quran/scope.ts';
 import { surahInfo } from '../../core/quran/surahs.ts';
 import type { AyahRef, DivisionKind } from '../../core/quran/types.ts';
 import { BackupError } from '../../core/storage/backup.ts';
@@ -52,8 +52,10 @@ export function scopeLabel(scope: RevisionScope, index?: DivisionIndex): string 
     }
     case 'surahs':
       return scope.surahs.length === 1 ? t('scope.surah', { name: surahName(scope.surahs[0] as number) }) : tn('scope.surahs', scope.surahs.length);
-    case 'range':
-      return t('scope.range', { from: refLabel(scope.start), to: refLabel(scope.end) });
+    case 'range': {
+      const span = index ? divisionSpan(scope, index) : null;
+      return span ? t('division.span', { kind: kindName(span.kind), from: span.from, to: span.to }) : t('scope.range', { from: refLabel(scope.start), to: refLabel(scope.end) });
+    }
   }
 }
 

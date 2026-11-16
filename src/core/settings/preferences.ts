@@ -36,6 +36,18 @@ export const CustomReciterSchema = z.object({
   attribution: z.string().max(400),
 });
 
+const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/**
+ * The active week or month revision plan: only its dates. What to revise on each day lives in the
+ * daily revision plans for those dates; a date in the period without one is a rest day.
+ */
+export const PeriodPlanSchema = z.object({
+  period: z.enum(['week', 'month']),
+  start: dateKey,
+  end: dateKey,
+}).refine((p) => p.start <= p.end, 'plan ends before it starts');
+
 export const PreferencesSchema = z.object({
   version: z.literal(1),
   reciterId: z.string(),
@@ -60,6 +72,8 @@ export const PreferencesSchema = z.object({
   reminder: z.object({ enabled: z.boolean(), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) }),
   /** Interface language. Arabic is the default; Quran text is never affected by it. */
   language: z.enum(['ar', 'en']),
+  /** Week or month revision goal; null until the user sets one. */
+  periodPlan: PeriodPlanSchema.nullable(),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
@@ -93,6 +107,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   hafeezGhost: 7,
   reminder: { enabled: false, time: '07:00' },
   language: 'ar',
+  periodPlan: null,
 };
 
 /** Merges stored (possibly older/partial) preferences onto defaults; invalid fields fall back. */

@@ -1,5 +1,5 @@
 import type { DivisionIndex } from './divisions.ts';
-import { formatRef, surahEndIndex, surahStartIndex, toIndex } from './refs.ts';
+import { formatRef, fromIndex, surahEndIndex, surahStartIndex, toIndex } from './refs.ts';
 import { surahInfo, TOTAL_AYAT } from './surahs.ts';
 import type { AyahRef, DivisionKind } from './types.ts';
 
@@ -79,6 +79,33 @@ export function scopeAyahCount(intervals: readonly IndexInterval[]): number {
   return intervals.reduce((n, iv) => n + iv.end - iv.start + 1, 0);
 }
 
+/** Several consecutive divisions (e.g. Hizb 2 to 3) as an ayah range; a single one stays a division. */
+export function divisionRangeScope(kind: DivisionKind, from: number, to: number, index: DivisionIndex): RevisionScope {
+  if (from === to) return { type: 'division', kind, number: from };
+  const a = index.range(kind, Math.min(from, to));
+  const b = index.range(kind, Math.max(from, to));
+  return { type: 'range', start: a.start, end: fromIndex(b.endIndex) };
+}
+
+/** Kinds tried, in order, when naming a range that lines up with division boundaries. */
+const SPAN_KINDS: readonly DivisionKind[] = ['hizb', 'juz', 'quarter', 'page'];
+
+/** If a range covers whole consecutive divisions, which ones (e.g. Hizb 2 to 3). */
+export function divisionSpan(scope: RevisionScope, index: DivisionIndex): { kind: DivisionKind; from: number; to: number } | null {
+  if (scope.type !== 'range') return null;
+  const x = toIndex(scope.start);
+  const y = toIndex(scope.end);
+  const lo = Math.min(x, y);
+  const hi = Math.max(x, y);
+  for (const kind of SPAN_KINDS) {
+    const from = index.numberAt(kind, lo);
+    const to = index.numberAt(kind, hi);
+    if (from === null || to === null || to <= from) continue;
+    if (index.range(kind, from).startIndex === lo && index.range(kind, to).endIndex === hi) return { kind, from, to };
+  }
+  return null;
+}
+
 export function describeScope(scope: RevisionScope, index?: DivisionIndex): string {
   switch (scope.type) {
     case 'all':
@@ -97,8 +124,10 @@ export function describeScope(scope: RevisionScope, index?: DivisionIndex): stri
       return scope.surahs.length === 1
         ? `Surah ${surahInfo(scope.surahs[0] as number).nameTransliterated}`
         : `${scope.surahs.length} surahs`;
-    case 'range':
-      return `${formatRef(scope.start)} – ${formatRef(scope.end)}`;
+    case 'range': {
+      const span = index ? divisionSpan(scope, index) : null;
+      return span ? `${kindLabel(span.kind)} ${span.from}–${span.to}` : `${formatRef(scope.start)} – ${formatRef(scope.end)}`;
+    }
   }
 }
 
