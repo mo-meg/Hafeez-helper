@@ -1,6 +1,6 @@
-import type { DailyPlan, ReviewEvent, RevisionSession } from '../model.ts';
+import { isUnresolved, type DailyPlan, type Mistake, type ReviewEvent, type RevisionSession } from '../model.ts';
 import type { DivisionIndex } from '../quran/divisions.ts';
-import { scopeIntervals, type IndexInterval, type RevisionScope } from '../quran/scope.ts';
+import { scopeContains, scopeIntervals, type IndexInterval, type RevisionScope } from '../quran/scope.ts';
 import { localDateKey } from '../util/ids.ts';
 
 export type PlanPeriod = 'week' | 'month';
@@ -46,24 +46,34 @@ export function expandTemplate(plan: PeriodPlan, template: WeekTemplate): Array<
 
 export type DayStatus = 'rest' | 'done' | 'missed' | 'today' | 'upcoming';
 
+/** One step of a revision day. `total` = ayat to cover; `covered` = ayat with evidence. */
+export interface StepProgress {
+  readonly total: number;
+  readonly covered: number;
+  /** 0..1; 1 when there is nothing to do or the step was marked by hand. */
+  readonly fraction: number;
+}
+
 export interface DayProgress {
   readonly date: string;
   readonly scope: RevisionScope | null;
   readonly planId: string | null;
-  readonly totalAyat: number;
-  readonly coveredAyat: number;
-  /** 0..1 */
-  readonly fraction: number;
+  /** Step 1: the portion's ayat with mistakes, revised in a mistakes session or a test. */
+  readonly check: StepProgress & { readonly nothingToCheck: boolean };
+  /** Step 2: the portion recited, by listening in full or marked "I recited it". */
+  readonly recite: StepProgress & { readonly marked: boolean };
+  /** The user marked the whole day as done. */
+  readonly markedDone: boolean;
   readonly status: DayStatus;
 }
 
 export interface PeriodProgress {
   readonly plan: PeriodPlan;
   readonly days: readonly DayProgress[];
-  /** Sums over revision days (a portion planned on two days counts twice). */
-  readonly totalAyat: number;
-  readonly coveredAyat: number;
-  readonly fraction: number;
+  /** Average step 1 progress over revision days that have mistakes to revise; null if none has. */
+  readonly checkFraction: number | null;
+  /** Average step 2 progress over all revision days (0..1). */
+  readonly reciteFraction: number;
   readonly revisionDays: number;
   readonly doneDays: number;
   readonly missedDays: number;
@@ -75,67 +85,104 @@ export interface PeriodProgress {
   readonly finished: boolean;
 }
 
-/** Day-by-day evidence: the last local date (within the period) each ayah was played in full or recalled. */
-function lastSeen(plan: PeriodPlan, sessions: readonly RevisionSession[], reviews: readonly ReviewEvent[]): Map<number, string> {
+export interface PeriodInput {
+  readonly plan: PeriodPlan;
+  readonly dailyPlans: readonly DailyPlan[];
+  readonly sessions: readonly RevisionSession[];
+  readonly reviews: readonly ReviewEvent[];
+  readonly mistakes: readonly Mistake[];
+  readonly index: DivisionIndex;
+  readonly now: Date;
+}
+
+const dayOf = (iso: string) => localDateKey(new Date(iso));
+
+/** For each ayah, the last local date within the period with evidence of the given kind. */
+function lastSeen(plan: PeriodPlan, entries: Iterable<[number, string]>): Map<number, string> {
   const seen = new Map<number, string>();
-  const note = (g: number, iso: string) => {
-    const k = localDateKey(new Date(iso));
-    if (k < plan.start || k > plan.end) return;
+  for (const [g, iso] of entries) {
+    const k = dayOf(iso);
+    if (k < plan.start || k > plan.end) continue;
     if ((seen.get(g) ?? '') < k) seen.set(g, k);
-  };
-  for (const s of sessions) if (!s.demo) for (const g of s.playedAyahIndexes) note(g, s.startedAt);
-  for (const r of reviews) if (!r.demo) note(r.globalIndex, r.at);
+  }
   return seen;
 }
 
+function* played(sessions: readonly RevisionSession[], modes: readonly RevisionSession['mode'][]): Generator<[number, string]> {
+  for (const s of sessions) if (!s.demo && modes.includes(s.mode)) for (const g of s.playedAyahIndexes) yield [g, s.startedAt];
+}
+
+function* answered(reviews: readonly ReviewEvent[]): Generator<[number, string]> {
+  for (const r of reviews) if (!r.demo) yield [r.globalIndex, r.at];
+}
+
+const ratio = (covered: number, total: number) => (total ? Math.min(1, covered / total) : 1);
+
 /**
- * Progress of each day: the share of that day's ayat played to the end in a session or recalled on
- * that day or later in the period (so a missed day can be caught up). Evidence only; no manual ticks.
+ * Progress of each revision day, in two steps, counted from what happened on that day or later in
+ * the period (so a missed day can be caught up):
+ * 1. Mistakes: of the portion's ayat that had an open mistake on that day, the share revised in a
+ *    mistakes (or combined) session or answered in a test/recall. Nothing to check counts as done.
+ * 2. Recitation: the share of the portion played to the end in a full (or combined) listening
+ *    session, or all of it once the user marks "I recited it".
+ * A day is done when both steps are complete, or when the user marks the whole day as done.
  */
-export function periodProgress(
-  plan: PeriodPlan,
-  dailyPlans: readonly DailyPlan[],
-  sessions: readonly RevisionSession[],
-  reviews: readonly ReviewEvent[],
-  index: DivisionIndex,
-  now: Date,
-): PeriodProgress {
-  const today = localDateKey(now);
-  const seen = lastSeen(plan, sessions, reviews);
-  const byDate = new Map(dailyPlans.filter((p) => p.kind === 'revision' && p.date >= plan.start && p.date <= plan.end).map((p) => [p.date, p]));
+export function periodProgress(input: PeriodInput): PeriodProgress {
+  const { plan, index } = input;
+  const today = localDateKey(input.now);
+  const checkSeen = lastSeen(plan, [...played(input.sessions, ['mistakes', 'combined']), ...answered(input.reviews)]);
+  const reciteSeen = lastSeen(plan, played(input.sessions, ['full', 'combined']));
+  const byDate = new Map(input.dailyPlans.filter((p) => p.kind === 'revision' && p.date >= plan.start && p.date <= plan.end).map((p) => [p.date, p]));
+  const mistakes = input.mistakes.filter((m) => !m.demo);
 
   const days: DayProgress[] = periodDates(plan).map((date) => {
     const dp = byDate.get(date);
-    if (!dp) return { date, scope: null, planId: null, totalAyat: 0, coveredAyat: 0, fraction: 0, status: 'rest' };
+    if (!dp) {
+      const none = { total: 0, covered: 0, fraction: 0 };
+      return { date, scope: null, planId: null, check: { ...none, nothingToCheck: true }, recite: { ...none, marked: false }, markedDone: false, status: 'rest' };
+    }
     let intervals: IndexInterval[] = [];
     try {
       intervals = scopeIntervals(dp.scope, index);
     } catch {
       intervals = [];
     }
+    // Ayat with a mistake that was open on this day: marked by then, not resolved before it.
+    const toCheck = new Set<number>();
+    for (const m of mistakes) {
+      if (!scopeContains(intervals, m.globalIndex)) continue;
+      if (dayOf(m.createdAt) > date && date < today) continue;
+      if (!isUnresolved(m.status) && m.resolvedAt && dayOf(m.resolvedAt) < date) continue;
+      toCheck.add(m.globalIndex);
+    }
+    let checked = 0;
+    for (const g of toCheck) if ((checkSeen.get(g) ?? '') >= date) checked++;
     let total = 0;
-    let covered = 0;
+    let recited = 0;
     for (const iv of intervals) {
       for (let g = iv.start; g <= iv.end; g++) {
         total++;
-        if ((seen.get(g) ?? '') >= date) covered++;
+        if ((reciteSeen.get(g) ?? '') >= date) recited++;
       }
     }
-    const fraction = total ? covered / total : 0;
-    const status: DayStatus = total > 0 && covered >= total ? 'done' : date < today ? 'missed' : date === today ? 'today' : 'upcoming';
-    return { date, scope: dp.scope, planId: dp.id, totalAyat: total, coveredAyat: covered, fraction, status };
+    const marked = !!dp.markedRecitedAt;
+    const markedDone = !!dp.markedDoneAt;
+    const check = { total: toCheck.size, covered: checked, fraction: markedDone ? 1 : ratio(checked, toCheck.size), nothingToCheck: toCheck.size === 0 };
+    const recite = { total, covered: marked || markedDone ? total : recited, fraction: marked || markedDone ? 1 : total ? recited / total : 0, marked };
+    const complete = markedDone || (check.fraction >= 1 && recite.fraction >= 1 && total > 0);
+    const status: DayStatus = complete ? 'done' : date < today ? 'missed' : date === today ? 'today' : 'upcoming';
+    return { date, scope: dp.scope, planId: dp.id, check, recite, markedDone, status };
   });
 
   const work = days.filter((d) => d.scope);
-  const totalAyat = work.reduce((n, d) => n + d.totalAyat, 0);
-  const coveredAyat = work.reduce((n, d) => n + d.coveredAyat, 0);
+  const avg = (list: readonly DayProgress[], f: (d: DayProgress) => number) => (list.length ? list.reduce((n, d) => n + f(d), 0) / list.length : 0);
+  const withMistakes = work.filter((d) => !d.check.nothingToCheck);
   const daysLeft = today > plan.end ? 0 : days.filter((d) => d.date >= today).length;
   return {
     plan,
     days,
-    totalAyat,
-    coveredAyat,
-    fraction: totalAyat ? coveredAyat / totalAyat : 0,
+    checkFraction: withMistakes.length ? avg(withMistakes, (d) => d.check.fraction) : null,
+    reciteFraction: avg(work, (d) => d.recite.fraction),
     revisionDays: work.length,
     doneDays: work.filter((d) => d.status === 'done').length,
     missedDays: work.filter((d) => d.status === 'missed').length,

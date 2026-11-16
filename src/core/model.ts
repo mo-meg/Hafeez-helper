@@ -164,6 +164,10 @@ export interface DailyPlan {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly completedAt: string | null;
+  /** Revision plans: the user said they recited the portion (e.g. from memory or by reading). */
+  readonly markedRecitedAt?: string | null;
+  /** Revision plans: the user marked the whole day as done. */
+  readonly markedDoneAt?: string | null;
 }
 
 export type SessionMode = 'mistakes' | 'full' | 'combined' | 'test';
