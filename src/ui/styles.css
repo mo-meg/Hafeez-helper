@@ -609,3 +609,58 @@ body.focus-reading.hafeez-hide main { padding-bottom: calc(50vh + 5rem + env(saf
 .rec-heard { margin: 0.25rem 0 0; }
 .rec-heard [lang='ar'] { font-family: var(--quran-font); font-size: 1.1rem; }
 .rec-latency { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- week / month plan */
+.goal-message { margin: 0.5rem 0 0; color: var(--mist); }
+.section-title { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; }
+.plan-days { display: grid; gap: 0.4rem; margin-top: 1rem; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.plan-days .day-name { font-size: 0.75rem; color: var(--mist); text-align: center; }
+.day {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0.15rem; min-width: 0; text-align: start;
+  padding: 0.45rem 0.5rem 0.5rem; border: 1px solid var(--line); border-radius: var(--radius-m);
+  background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; position: relative; overflow: hidden;
+}
+.day:hover { border-color: var(--accent); }
+.day-head { font-size: 0.75rem; font-weight: 600; color: var(--mist); }
+.day-portion { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-foot { font-size: 0.75rem; color: var(--mist); font-variant-numeric: tabular-nums; }
+.day-bar { height: 3px; background: var(--sunken); border-radius: 999px; overflow: hidden; margin-top: 0.15rem; }
+.day-bar > span { display: block; height: 100%; background: var(--accent); }
+.day.done { background: var(--sage-soft); border-color: color-mix(in srgb, var(--sage) 45%, transparent); }
+.day.done .day-bar > span { background: var(--sage); }
+.day.done .day-foot { color: var(--sage); font-weight: 600; }
+.day.missed { background: var(--mistake-soft); border-color: color-mix(in srgb, var(--mistake) 45%, transparent); }
+.day.missed .day-bar > span { background: var(--mistake); }
+.day.missed .day-foot { color: var(--mistake); font-weight: 600; }
+.day.today { border: 2px solid var(--accent); background: var(--accent-soft); }
+.day.rest { border-style: dashed; background: transparent; }
+.day.rest .day-portion { color: var(--mist); font-weight: 500; }
+.plan-days.month .day { padding: 0.3rem 0.35rem 0.4rem; }
+.plan-days.month .day-portion { font-size: 0.7rem; font-weight: 500; }
+.chip.day-chip.done { background: var(--sage-soft); color: var(--sage); }
+.chip.day-chip.missed { background: var(--mistake-soft); color: var(--mistake); }
+.chip.day-chip.today { background: var(--accent-soft); color: var(--accent); }
+.chip.day-chip.rest { background: transparent; border: 1px dashed var(--line); color: var(--mist); }
+.day-legend { margin-top: 0.6rem; }
+.plan-rows { display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); }
+.plan-row { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 0.6rem 0.75rem; background: var(--surface); }
+.plan-row .row.spread { margin-bottom: 0.35rem; }
+details.fold > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; margin: 0; color: var(--ink); }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary h2 { margin: 0; font-size: 1.05rem; }
+details.fold > summary::after { content: '▾'; color: var(--mist); transition: transform 0.2s; }
+details.fold:not([open]) > summary::after { transform: rotate(-90deg); }
+:root[dir='rtl'] details.fold:not([open]) > summary::after { transform: rotate(90deg); }
+details.fold .fold-body { margin-top: 0.75rem; }
+.grid.folds { align-items: start; }
+.grid.folds > .panel + .panel { margin-top: 0; }
+
+@media (max-width: 640px) {
+  .plan-days.week { grid-template-columns: 1fr; }
+  .plan-days.week .day { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 0.6rem; }
+  .plan-days.week .day-portion { flex: 1; }
+  .plan-days.week .day-bar { flex-basis: 100%; }
+  .plan-days.month { gap: 0.2rem; }
+  .plan-days.month .day-portion { display: none; }
+  .plan-days.month .day { padding: 0.3rem 0.25rem; align-items: center; }
+}

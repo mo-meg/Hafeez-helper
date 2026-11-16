@@ -3,8 +3,9 @@ import type { Mistake } from '../../core/model.ts';
 import { DEFAULT_SCORING } from '../../core/review/scoring.ts';
 import { effectiveDueDate } from '../../core/review/scheduler.ts';
 import type { App } from '../app.ts';
+import { currentPeriod, periodPanel, todayGoal } from './periodPlan.ts';
 import { bar } from '../components/charts.ts';
-import { h, relativeDays } from '../dom.ts';
+import { h, relativeDays, type Child } from '../dom.ts';
 import { fmtList, fmtNum, t, tn } from '../i18n/index.ts';
 import { categoryLabel, modeLabel, outcomeLabel, refLabel, scopeLabel } from '../i18n/labels.ts';
 
@@ -71,17 +72,26 @@ function recentActivity(app: App): HTMLElement {
   );
 }
 
+/** Lower dashboard sections fold away; remember which are open while the app runs. */
+const foldState = new Map<string, boolean>();
+function fold(id: string, title: string, defaultOpen: boolean, ...body: Child[]): HTMLElement {
+  const el = h('details', { class: 'panel fold', open: foldState.get(id) ?? defaultOpen, 'data-key': `fold-${id}` }, h('summary', null, h('h2', null, title)), h('div', { class: 'fold-body' }, body));
+  el.addEventListener('toggle', () => foldState.set(id, el.open));
+  return el;
+}
+
 export function dashboardView(app: App): Node {
   const d = dashboardData(app);
-  const plan = d.todayPlan;
   const fresh = d.totalMistakes === 0 && app.data.plans.length === 0;
   const maxCat = Math.max(1, ...d.categories.map((c) => c.total));
   const metric = (value: number, label: string, cls = '') => h('div', { class: `metric ${cls}` }, h('div', { class: 'value' }, fmtNum(value)), h('div', { class: 'label' }, label));
-  const planStatus = { pending: t('common.notStarted'), in_progress: t('common.inProgress'), completed: t('common.completed') };
+  const period = currentPeriod(app);
+  const panel = periodPanel(app, period);
+  const todayMetrics = h('div', { class: 'metrics', style: { 'margin-top': '1rem' } }, metric(d.ayatReviewedToday, t('dash.recalledToday')), metric(d.streakDays, tn('dash.streak', d.streakDays), d.streakDays > 0 ? 'good' : ''));
 
   return h(
     'div',
-    null,
+    { class: 'dashboard' },
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, t('dash.greeting')), h('p', { class: 'muted' }, t('dash.intro')))),
     d.hasDemoData ? h('div', { class: 'notice demo', role: 'note' }, h('p', null, t('dash.demoNotice')), h('a', { href: '#/settings?section=privacy' }, t('dash.removeDemo'))) : null,
     fresh
@@ -99,21 +109,11 @@ export function dashboardView(app: App): Node {
           h('p', { class: 'muted' }, t('dash.demoHint')),
         )
       : null,
+    // 1. Today: the goal from the plan, and what is due.
     h(
       'div',
       { class: 'grid two' },
-      h(
-        'section',
-        { class: 'panel hero', 'aria-labelledby': 'dash-today' },
-        h('div', { class: 'row spread' }, h('h2', { id: 'dash-today', style: { margin: '0' } }, t('dash.today')), plan ? h('span', { class: `chip ${plan.status === 'completed' ? 'status-resolved' : plan.status === 'in_progress' ? 'status-under_review' : ''}` }, planStatus[plan.status]) : null),
-        plan
-          ? [
-              h('p', { class: 'hero-portion' }, scopeLabel(plan.scope, app.quran.index)),
-              h('a', { class: 'btn primary big', href: '#/revision', 'data-key': 'dash-start' }, plan.status === 'completed' ? t('dash.reviewAgain') : t('dash.startRevision')),
-            ]
-          : [h('p', { class: 'muted', style: { margin: '0.5rem 0 0.75rem' } }, t('dash.noPlan')), h('a', { class: 'btn primary big', href: '#/revision', 'data-key': 'dash-start' }, t('dash.setToday'))],
-        h('div', { class: 'metrics', style: { 'margin-top': '1rem' } }, metric(d.ayatReviewedToday, t('dash.recalledToday')), metric(d.streakDays, tn('dash.streak', d.streakDays), d.streakDays > 0 ? 'good' : '')),
-      ),
+      todayGoal(app, period, panel, todayMetrics),
       h(
         'section',
         { class: 'panel' },
@@ -128,9 +128,13 @@ export function dashboardView(app: App): Node {
         d.upcoming.length ? h('div', null, h('h3', { style: { 'margin-top': '1rem' } }, t('dash.comingUp')), h('ul', { class: 'activity' }, d.upcoming.slice(0, 5).map((m) => h('li', null, h('span', null, refLabel(m)), h('span', { class: 'when' }, relativeDays(effectiveDueDate(m)?.toISOString() ?? null, app.now())))))) : null,
       ),
     ),
+    // 2. The week or month plan.
+    h('div', { style: { margin: '1rem 0' } }, panel.el),
+    // 3. Numbers at a glance.
+    h('h2', { class: 'section-title' }, t('dash.overview')),
     h(
       'div',
-      { class: 'metrics', style: { margin: '1rem 0' } },
+      { class: 'metrics', style: { margin: '0 0 1rem' } },
       metric(d.ayatWithMistakes, t('dash.ayatWithMistakes')),
       metric(d.unresolved, t('dash.unresolvedMistakes'), d.unresolved ? 'alert' : ''),
       metric(d.resolved, t('common.resolved'), d.resolved ? 'good' : ''),
@@ -138,13 +142,14 @@ export function dashboardView(app: App): Node {
       metric(d.due.length, t('dash.due')),
       metric(d.completedSessions, t('dash.completedSessions')),
     ),
+    // 4. Details, folded so the top stays short.
     h(
       'div',
-      { class: 'grid two' },
-      h(
-        'section',
-        { class: 'panel' },
-        h('h2', null, t('dash.quality')),
+      { class: 'grid two folds' },
+      fold(
+        'quality',
+        t('dash.quality'),
+        true,
         d.overall.score === null
           ? h('p', { class: 'muted' }, t('dash.noScore'))
           : [
@@ -153,17 +158,17 @@ export function dashboardView(app: App): Node {
             ],
         scoreExplanation(),
       ),
-      h('section', { class: 'panel' }, h('h2', null, t('dash.recent')), recentActivity(app)),
-      h(
-        'section',
-        { class: 'panel' },
-        h('h2', null, t('dash.types')),
+      fold('recent', t('dash.recent'), true, recentActivity(app)),
+      fold(
+        'types',
+        t('dash.types'),
+        false,
         d.totalMistakes === 0
           ? h('p', { class: 'muted' }, t('dash.noMistakes'))
           : h('table', null, h('tbody', null, d.categories.filter((c) => c.total > 0).map((c) => h('tr', null, h('td', null, categoryLabel(c.category)), h('td', { style: { width: '40%' } }, bar(c.total, maxCat, c.unresolved > 0)), h('td', null, fmtNum(c.total), h('small', { class: 'muted' }, t('dash.openCount', { count: c.unresolved }))))))),
       ),
-      h('section', { class: 'panel' }, h('h2', null, t('dash.mostPractice')), practiceList(d.mostPractice, t('dash.nothingStandsOut'), (i) => tn('dash.practiceDetail', i.lapses, { open: i.unresolved }))),
-      h('section', { class: 'panel' }, h('h2', null, t('dash.notRecent')), practiceList(d.notReviewedRecently, t('dash.allRecent'), (i) => (i.lastReviewedAt ? t('dash.lastReviewed', { when: relativeDays(i.lastReviewedAt, app.now()) }) : t('dash.neverReviewed')))),
+      fold('practice', t('dash.mostPractice'), false, practiceList(d.mostPractice, t('dash.nothingStandsOut'), (i) => tn('dash.practiceDetail', i.lapses, { open: i.unresolved }))),
+      fold('not-recent', t('dash.notRecent'), false, practiceList(d.notReviewedRecently, t('dash.allRecent'), (i) => (i.lastReviewedAt ? t('dash.lastReviewed', { when: relativeDays(i.lastReviewedAt, app.now()) }) : t('dash.neverReviewed')))),
     ),
   );
 }
