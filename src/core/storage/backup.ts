@@ -88,6 +88,8 @@ const PlanSchema = z.object({
   createdAt: iso,
   updatedAt: iso,
   completedAt: iso.nullable(),
+  markedRecitedAt: iso.nullable().optional(),
+  markedDoneAt: iso.nullable().optional(),
 });
 
 const SessionSchema = z.object({

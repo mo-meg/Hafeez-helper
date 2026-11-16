@@ -65,6 +65,8 @@ export class PlanService {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       completedAt: sameScope ? existing.completedAt : null,
+      ...(sameScope && existing.markedRecitedAt ? { markedRecitedAt: existing.markedRecitedAt } : {}),
+      ...(sameScope && existing.markedDoneAt ? { markedDoneAt: existing.markedDoneAt } : {}),
     };
     await this.store.plans.put(plan);
     return plan;
@@ -87,6 +89,17 @@ export class PlanService {
       if (d.scope) await this.setPlan(d.date, d.scope, 'revision');
       else await this.store.plans.delete(PlanService.planId(d.date, 'revision'));
     }
+  }
+
+  /** Manual marks on a revision day: "I recited it" or "the whole day is done" (on = set, off = undo). */
+  async markDay(id: string, mark: 'recited' | 'done', on: boolean): Promise<DailyPlan> {
+    const p = await this.store.plans.get(id);
+    if (!p) throw new PlanError('Plan not found');
+    const now = this.clock.now().toISOString();
+    const field = mark === 'recited' ? 'markedRecitedAt' : 'markedDoneAt';
+    const updated: DailyPlan = { ...p, [field]: on ? now : null, updatedAt: now };
+    await this.store.plans.put(updated);
+    return updated;
   }
 
   async setPlanStatus(id: string, status: DailyPlan['status']): Promise<DailyPlan> {

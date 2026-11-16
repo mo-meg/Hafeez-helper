@@ -38,9 +38,15 @@ export interface ActiveTest {
   finished: boolean;
 }
 
-const setup = { kind: 'hizb' as TestKind, number: 1, surah: 1, includeResolved: false, shuffle: false };
+const setup = { kind: 'hizb' as TestKind, number: 1, surah: 1, includeResolved: false, shuffle: false, planScope: null as RevisionScope | null };
+
+/** Opens the Test set up for a portion from the week/month plan (any portion, e.g. Hizb 2 to 3). */
+export function testPortion(scope: RevisionScope): void {
+  setup.planScope = scope;
+}
 
 function scopeFromSetup(): RevisionScope {
+  if (setup.planScope) return setup.planScope;
   return setup.kind === 'surah' ? { type: 'surahs', surahs: [setup.surah] } : { type: 'division', kind: setup.kind as DivisionKind, number: setup.number };
 }
 
@@ -75,7 +81,10 @@ function setupView(app: App): Node {
       'section',
       { class: 'panel' },
       h('h2', null, t('test.what')),
-      h(
+      setup.planScope
+        ? h('p', { class: 'row' }, h('span', null, t('test.planPortion', { portion: scopeLabel(setup.planScope, index) })), h('button', { type: 'button', class: 'quiet', onclick: () => { setup.planScope = null; rerender(); } }, t('test.otherPortion')))
+        : null,
+      setup.planScope ? null : h(
         'div',
         { class: 'row', style: { 'align-items': 'flex-end' } },
         h('label', { class: 'field' }, h('span', null, t('picker.kind')), h('select', { id: 'test-kind', 'data-key': 'test-kind', onchange: (e: Event) => { setup.kind = (e.target as HTMLSelectElement).value as TestKind; setup.number = 1; rerender(); } },

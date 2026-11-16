@@ -642,6 +642,20 @@ body.focus-reading.hafeez-hide main { padding-bottom: calc(50vh + 5rem + env(saf
 .chip.day-chip.today { background: var(--accent-soft); color: var(--accent); }
 .chip.day-chip.rest { background: transparent; border: 1px dashed var(--line); color: var(--mist); }
 .day-legend { margin-top: 0.6rem; }
+.day-step { display: flex; flex-direction: column; gap: 0.1rem; }
+.day-step.recite .day-bar > span { background: var(--gilt); }
+.day.done .day-step .day-bar > span { background: var(--sage); }
+.day-steps { margin-top: 0.5rem; }
+.day-steps .step { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 0.6rem 0.75rem; background: var(--surface); }
+.day-steps .step + .step { margin-top: 0.5rem; }
+.day-steps .step.done { border-color: color-mix(in srgb, var(--sage) 45%, transparent); }
+.day-steps .step.done .progress-track > span { background: var(--sage); }
+.day-steps .step-pct { font-variant-numeric: tabular-nums; font-weight: 700; }
+.day-steps .step-text { margin: 0.35rem 0 0.5rem; font-size: 0.9rem; }
+.day-steps .step .progress-track { margin-top: 0.35rem; }
+.step-totals { gap: 0.75rem; }
+.step-totals .progress-track { margin-top: 0.3rem; }
+details.day-change { margin-top: 0.75rem; }
 .plan-rows { display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); }
 .plan-row { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 0.6rem 0.75rem; background: var(--surface); }
 .plan-row .row.spread { margin-bottom: 0.35rem; }
@@ -659,7 +673,7 @@ details.fold .fold-body { margin-top: 0.75rem; }
   .plan-days.week { grid-template-columns: 1fr; }
   .plan-days.week .day { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 0.6rem; }
   .plan-days.week .day-portion { flex: 1; }
-  .plan-days.week .day-bar { flex-basis: 100%; }
+  .plan-days.week .day-step { flex-basis: 100%; }
   .plan-days.month { gap: 0.2rem; }
   .plan-days.month .day-portion { display: none; }
   .plan-days.month .day { padding: 0.3rem 0.25rem; align-items: center; }

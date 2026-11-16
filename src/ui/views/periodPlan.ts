@@ -11,6 +11,7 @@ import {
   type PeriodProgress,
   type PlanPeriod,
 } from '../../core/plan/periodPlan.ts';
+import { fromIndex } from '../../core/quran/refs.ts';
 import { scopeIntervals, type RevisionScope } from '../../core/quran/scope.ts';
 import type { App } from '../app.ts';
 import { confirmDialog, openDialog } from '../components/dialog.ts';
@@ -19,12 +20,13 @@ import { h, replaceChildren } from '../dom.ts';
 import { fmtDateKey, fmtNum, t, tn } from '../i18n/index.ts';
 import { errorText, scopeLabel } from '../i18n/labels.ts';
 import { sessionConfigFor } from './revision.ts';
+import { testPortion } from './test.ts';
 
 /** Progress of the plan in preferences, or null when none is set. */
 export function currentPeriod(app: App): PeriodProgress | null {
   const plan = app.prefs.periodPlan;
   if (!plan) return null;
-  return periodProgress(plan, app.data.plans, app.data.sessions, app.data.reviews, app.quran.index, app.now());
+  return periodProgress({ plan, dailyPlans: app.data.plans, sessions: app.data.sessions, reviews: app.data.reviews, mistakes: app.data.mistakes, index: app.quran.index, now: app.now() });
 }
 
 const pct = (f: number) => Math.round(f * 100);
@@ -38,11 +40,82 @@ export function progressBar(fraction: number, label: string): HTMLElement {
 
 const statusText = (s: DayStatus) => t(`pp.status.${s}`);
 
-/** Starts revising a planned day: today goes to the Revision page; other days open a full listening session. */
-function reviseDay(app: App, d: DayProgress): void {
-  if (!d.scope) return;
-  if (d.date === app.today()) app.navigate('#/revision');
-  else app.prepare(sessionConfigFor(app, d.scope, 'full', d.planId));
+/** Where "Read" opens the portion in the Quran browser. */
+function readHref(app: App, scope: RevisionScope): string {
+  if (scope.type === 'division') return `#/quran?${scope.kind}=${scope.number}`;
+  const first = scopeIntervals(scope, app.quran.index)[0]?.start ?? 1;
+  return `#/quran?surah=${fromIndex(first).surah}&focus=${first}`;
+}
+
+const checkText = (d: DayProgress) => (d.markedDone && d.check.covered < d.check.total ? t('step.markedDone') : d.check.nothingToCheck ? t('step.checkNone') : t('step.checkProgress', { covered: fmtNum(d.check.covered), total: fmtNum(d.check.total), percent: fmtNum(pct(d.check.fraction)) }));
+const reciteText = (d: DayProgress) => (d.recite.marked ? t('step.recitedMarked') : d.markedDone ? t('step.markedDone') : t('step.reciteProgress', { covered: fmtNum(d.recite.covered), total: fmtNum(d.recite.total), percent: fmtNum(pct(d.recite.fraction)) }));
+
+/**
+ * The two steps of a revision day with their progress and actions:
+ * 1. revise the portion's mistakes (mistakes session or test), 2. recite the portion (listen, read, or mark).
+ * `leave` runs before navigating away (e.g. closes the dialog).
+ */
+function daySteps(app: App, d: DayProgress, leave: () => void = () => {}): HTMLElement | null {
+  const scope = d.scope;
+  if (!scope) return null;
+  const actionable = d.date <= app.today();
+  const mark = (kind: 'recited' | 'done', on: boolean, ok: string) => () => {
+    if (!d.planId) return;
+    const id = d.planId;
+    leave();
+    void app.act(async () => {
+      await app.s.plans.markDay(id, kind, on);
+      await app.refresh();
+    }, ok);
+  };
+  const go = (fn: () => void) => () => {
+    leave();
+    fn();
+  };
+  const stepDone = (f: number) => (f >= 1 ? ' done' : '');
+  return h(
+    'div',
+    { class: 'day-steps' },
+    actionable && !d.markedDone && d.check.fraction < 1 ? h('p', { class: 'muted', style: { margin: '0 0 0.5rem' } }, t('step.orderHint')) : null,
+    h(
+      'div',
+      { class: `step${stepDone(d.check.fraction)}` },
+      h('div', { class: 'row spread' }, h('strong', null, t('step.check')), h('span', { class: 'step-pct' }, d.check.nothingToCheck && !d.markedDone ? t('step.none') : `${fmtNum(pct(d.check.fraction))}%`)),
+      progressBar(d.check.fraction, t('step.check')),
+      h('p', { class: 'muted step-text' }, checkText(d)),
+      actionable && !d.check.nothingToCheck && d.check.fraction < 1
+        ? h(
+            'div',
+            { class: 'row' },
+            h('button', { type: 'button', class: 'primary', 'data-key': 'step-mistakes', onclick: go(() => app.prepare(sessionConfigFor(app, scope, 'mistakes', d.planId))) }, t('step.reviseMistakes')),
+            h('button', { type: 'button', 'data-key': 'step-test', onclick: go(() => { testPortion(scope); app.navigate('#/test'); }) }, t('step.takeTest')),
+          )
+        : null,
+    ),
+    h(
+      'div',
+      { class: `step${stepDone(d.recite.fraction)}` },
+      h('div', { class: 'row spread' }, h('strong', null, t('step.recite')), h('span', { class: 'step-pct' }, `${fmtNum(pct(d.recite.fraction))}%`)),
+      progressBar(d.recite.fraction, t('step.recite')),
+      h('p', { class: 'muted step-text' }, reciteText(d)),
+      actionable
+        ? h(
+            'div',
+            { class: 'row' },
+            d.recite.fraction < 1 ? h('button', { type: 'button', class: d.check.fraction >= 1 ? 'primary' : '', 'data-key': 'step-listen', onclick: go(() => app.prepare(sessionConfigFor(app, scope, 'full', d.planId))) }, d.recite.covered ? t('step.listenMore') : t('step.listen')) : null,
+            h('a', { class: 'btn', href: readHref(app, scope), onclick: () => leave() }, t('step.read')),
+            d.recite.marked
+              ? h('button', { type: 'button', class: 'quiet', onclick: mark('recited', false, t('step.undone')) }, t('step.undoRecited'))
+              : d.recite.fraction < 1 ? h('button', { type: 'button', 'data-key': 'step-recited', onclick: mark('recited', true, t('step.recitedToast')) }, t('step.iRecited')) : null,
+          )
+        : null,
+    ),
+    actionable
+      ? h('p', { style: { margin: '0.5rem 0 0' } }, d.markedDone
+          ? h('button', { type: 'button', class: 'quiet', onclick: mark('done', false, t('step.undone')) }, t('step.undoDay'))
+          : d.status !== 'done' ? h('button', { type: 'button', class: 'quiet', 'data-key': 'step-day-done', onclick: mark('done', true, t('step.dayDoneToast')) }, t('step.markDay')) : null)
+      : h('p', { class: 'muted', style: { margin: '0.5rem 0 0' } }, t('step.upcoming')),
+  );
 }
 
 /** Choosing a portion or a rest day (one row of the editor, or the single-day dialog). */
@@ -68,62 +141,74 @@ function dayChooser(app: App, scope: RevisionScope | null, idPrefix: string, isR
   };
 }
 
-/** Dialog for one day: progress, catch-up, and changing the portion of today or an upcoming day. */
+/** Dialog for one day: the two steps, catch-up, and changing the portion of today or an upcoming day. */
 function openDay(app: App, d: DayProgress): void {
   const editable = d.date >= app.today();
   const chooser = editable ? dayChooser(app, d.scope, `pd-${d.date}`) : null;
   const error = h('p', { role: 'alert', style: { color: 'var(--mistake)' } });
+  let closeFn: () => void = () => {};
+  const save = h('button', {
+    type: 'button',
+    class: 'primary',
+    hidden: true,
+    onclick: () => {
+      if (!chooser) return;
+      const r = chooser.read();
+      if ('error' in r) {
+        error.textContent = r.error;
+        return;
+      }
+      closeFn();
+      void app.act(async () => {
+        await app.s.plans.applySchedule([{ date: d.date, scope: r.scope }]);
+        await app.refresh();
+      }, t('pp.daySaved'));
+    },
+  }, t('pp.saveDay'));
+  const change = chooser ? h('details', { class: 'day-change', ontoggle: (e: Event) => { save.hidden = !(e.currentTarget as HTMLDetailsElement).open; } }, h('summary', null, d.scope ? t('pp.editDay') : t('pp.addDay')), chooser.el, error) : null;
   openDialog({
     title: dayTitle(d.date),
     body: h(
       'div',
       null,
       h('p', null, h('span', { class: `chip day-chip ${d.status}` }, statusText(d.status)), ' ', h('strong', null, d.scope ? scopeLabel(d.scope, app.quran.index) : t('pp.rest'))),
-      d.scope ? [progressBar(d.fraction, dayTitle(d.date)), h('p', { class: 'muted' }, t('pp.dayProgress', { covered: fmtNum(d.coveredAyat), total: fmtNum(d.totalAyat), percent: pct(d.fraction) }))] : null,
       d.status === 'missed' ? h('p', { class: 'muted' }, t('pp.catchUpHelp')) : null,
-      chooser ? h('div', { style: { 'margin-top': '0.75rem' } }, h('h3', null, t('pp.editDay')), chooser.el, error) : h('p', { class: 'muted' }, t('pp.pastDay')),
+      daySteps(app, d, () => closeFn()),
+      change ?? (d.scope ? null : h('p', { class: 'muted' }, t('pp.pastDay'))),
     ),
-    actions: (close) => [
-      h('button', { type: 'button', onclick: close }, t('common.close')),
-      d.scope && d.status !== 'upcoming' && d.status !== 'done' ? h('button', { type: 'button', class: chooser ? '' : 'primary', onclick: () => { close(); reviseDay(app, d); } }, t('pp.reviseNow')) : null,
-      chooser
-        ? h('button', {
-            type: 'button',
-            class: 'primary',
-            onclick: () => {
-              const r = chooser.read();
-              if ('error' in r) {
-                error.textContent = r.error;
-                return;
-              }
-              close();
-              void app.act(async () => {
-                await app.s.plans.applySchedule([{ date: d.date, scope: r.scope }]);
-                await app.refresh();
-              }, t('pp.daySaved'));
-            },
-          }, t('pp.saveDay'))
-        : null,
-    ],
+    actions: (close) => {
+      closeFn = close;
+      return [h('button', { type: 'button', onclick: close }, t('common.close')), chooser ? save : null];
+    },
   });
 }
 
 function dayCell(app: App, d: DayProgress, compact: boolean): HTMLElement {
   const date = Number(d.date.slice(8));
   const portion = d.scope ? scopeLabel(d.scope, app.quran.index) : t('pp.rest');
+  const line = (label: string, f: number, cls: string) =>
+    h('span', { class: `day-step ${cls}` }, compact ? null : h('span', { class: 'day-foot' }, `${label} ${fmtNum(pct(f))}%`), h('span', { class: 'day-bar' }, h('span', { style: { width: `${pct(f)}%` } })));
   return h(
     'button',
     {
       type: 'button',
       class: `day ${d.status}`,
-      'aria-label': `${dayTitle(d.date)}: ${portion}, ${statusText(d.status)}${d.scope ? `, ${pct(d.fraction)}%` : ''}`,
+      'aria-label': d.scope
+        ? `${dayTitle(d.date)}: ${portion}, ${statusText(d.status)}, ${t('step.check')} ${d.check.nothingToCheck ? t('step.none') : `${pct(d.check.fraction)}%`}, ${t('step.recite')} ${pct(d.recite.fraction)}%`
+        : `${dayTitle(d.date)}: ${portion}`,
       title: portion,
       onclick: () => openDay(app, d),
     },
     h('span', { class: 'day-head' }, compact ? fmtNum(date) : `${weekday(d.date)} ${fmtNum(date)}`),
     h('span', { class: 'day-portion' }, portion),
-    d.scope ? h('span', { class: 'day-foot' }, d.status !== 'upcoming' ? `${fmtNum(pct(d.fraction))}%` : statusText(d.status)) : null,
-    d.scope ? h('span', { class: 'day-bar' }, h('span', { style: { width: `${pct(d.fraction)}%` } })) : null,
+    d.scope
+      ? [
+          d.check.nothingToCheck && !d.markedDone
+            ? h('span', { class: 'day-step check none' }, compact ? null : h('span', { class: 'day-foot' }, `${t('step.checkShort')}: ${t('step.none')}`))
+            : line(t('step.checkShort'), d.check.fraction, 'check'),
+          line(t('step.reciteShort'), d.recite.fraction, 'recite'),
+        ]
+      : null,
   );
 }
 
@@ -279,8 +364,13 @@ export function periodPanel(app: App, p: PeriodProgress | null): PeriodPanel {
     };
     replaceChildren(body,
       h('p', { class: 'muted', style: { margin: '0.15rem 0 0.75rem' } }, t('pp.range', { start: fmtDateKey(p.plan.start), end: fmtDateKey(p.plan.end) })),
-      h('div', { class: 'row spread', style: { 'margin-bottom': '0.35rem' } }, h('strong', null, t('pp.summary', { done: fmtNum(p.doneDays), days: fmtNum(p.revisionDays), percent: fmtNum(pct(p.fraction)) })), ended ? null : h('span', { class: 'muted' }, tn('pp.daysLeft', p.daysLeft))),
-      progressBar(p.fraction, t('pp.title')),
+      h('div', { class: 'row spread', style: { 'margin-bottom': '0.5rem' } }, h('strong', null, t('pp.summary', { done: fmtNum(p.doneDays), days: fmtNum(p.revisionDays) })), ended ? null : h('span', { class: 'muted' }, tn('pp.daysLeft', p.daysLeft))),
+      h(
+        'div',
+        { class: 'grid two step-totals' },
+        h('div', null, h('div', { class: 'row spread' }, h('span', null, t('step.check')), h('strong', null, p.checkFraction === null ? t('step.none') : `${fmtNum(pct(p.checkFraction))}%`)), progressBar(p.checkFraction ?? 1, t('step.check'))),
+        h('div', null, h('div', { class: 'row spread' }, h('span', null, t('step.recite')), h('strong', null, `${fmtNum(pct(p.reciteFraction))}%`)), progressBar(p.reciteFraction, t('step.recite'))),
+      ),
       p.missedDays && !ended ? h('p', { class: 'notice warn', style: { margin: '0.75rem 0 0' } }, tn('pp.missed', p.missedDays)) : null,
       ended ? h('p', { class: 'notice info', style: { margin: '0.75rem 0 0' } }, p.doneDays === p.revisionDays ? t('pp.overDone') : t('pp.over')) : null,
       dayGrid(app, p),
@@ -316,9 +406,7 @@ export function todayGoal(app: App, p: PeriodProgress | null, panel: PeriodPanel
       head(h('span', { class: `chip day-chip ${d.status}` }, statusText(d.status))),
       h('p', { class: 'goal-message' }, done ? t('goal.done') : t('goal.message')),
       h('p', { class: 'hero-portion' }, scopeLabel(d.scope as RevisionScope, index)),
-      progressBar(d.fraction, t('goal.title')),
-      h('p', { class: 'muted', style: { margin: '0.35rem 0 0.75rem' } }, t('pp.dayProgress', { covered: fmtNum(d.coveredAyat), total: fmtNum(d.totalAyat), percent: fmtNum(pct(d.fraction)) })),
-      h('a', { class: 'btn primary big', href: '#/revision', 'data-key': 'dash-start' }, done ? t('dash.reviewAgain') : d.coveredAyat ? t('goal.continue') : t('dash.startRevision')),
+      daySteps(app, d) ?? h('span'),
       next ?? h('span'),
     ];
   } else if (active) {
