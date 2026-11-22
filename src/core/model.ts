@@ -170,7 +170,8 @@ export interface DailyPlan {
   readonly markedDoneAt?: string | null;
 }
 
-export type SessionMode = 'mistakes' | 'full' | 'combined' | 'test';
+/** `write`: writing mistake ayat from memory over faint text (practice only, never graded). */
+export type SessionMode = 'mistakes' | 'full' | 'combined' | 'test' | 'write';
 export type SessionStatus = 'active' | 'completed' | 'abandoned';
 
 export interface RepeatConfig {
@@ -201,7 +202,7 @@ export interface RevisionSession {
   readonly mistakeAyahIndexes: readonly number[];
   readonly plannedSteps: number;
   readonly completedSteps: number;
-  /** Distinct ayat whose audio finished at least once. Playback evidence only — never a recall. */
+  /** Distinct ayat whose audio finished at least once (in `write` sessions: ayat written from memory). Never a recall. */
   readonly playedAyahIndexes: readonly number[];
   readonly demo?: boolean;
 }

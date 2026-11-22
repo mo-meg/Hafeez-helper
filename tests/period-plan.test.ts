@@ -106,6 +106,25 @@ describe('week / month revision plan', () => {
     assert.equal(over.today, null);
   });
 
+  it('writing a mistake ayah from memory revises it for the day but never touches the mistake', async () => {
+    const { plans, store, clock, mistakes } = setup('2026-03-02T09:00:00');
+    const plan = makePeriodPlan('week', '2026-03-02');
+    await plans.applySchedule([{ date: '2026-03-02', scope: hizb(5) }]);
+    const { mistake: m } = await mistakes.markWord({ surah: 2, ayah: 255 }, word(1), { category: 'forgotten' });
+    const g = m.globalIndex;
+    const progress = async () => periodProgress({ plan, dailyPlans: await store.plans.getAll(), sessions: await store.sessions.getAll(), reviews: await store.reviews.getAll(), mistakes: await store.mistakes.getAll(), index, now: clock.now() });
+    assert.deepEqual([(await progress()).today?.check.covered, (await progress()).today?.check.total], [0, 1]);
+    const s = await plans.startSession({ planId: null, mode: 'write', scope: hizb(5), reciterId: 'r', repeat, mistakeAyahIndexes: [g], plannedSteps: 1 });
+    const after = await plans.recordWritten(s.id, g);
+    assert.equal((await plans.recordWritten(s.id, g)).completedSteps, 1, 'writing the same ayah twice counts once');
+    assert.deepEqual(after.playedAyahIndexes, [g]);
+    assert.equal((await progress()).today?.check.fraction, 1);
+    assert.equal((await progress()).today?.recite.covered, 0, 'writing is not listening to the portion');
+    const stored = (await store.mistakes.getAll()).find((x) => x.id === m.id);
+    assert.equal(stored?.status, m.status, 'status unchanged');
+    assert.equal((await store.reviews.getAll()).length, 0, 'no review recorded');
+  });
+
   it('ignores demo records', () => {
     const plan = makePeriodPlan('week', '2026-03-02');
     const dp = { id: 'p', date: '2026-03-02', kind: 'revision' as const, scope: hizb(1), status: 'pending' as const, sessionIds: [], createdAt: '', updatedAt: '', completedAt: null };

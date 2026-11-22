@@ -27,6 +27,11 @@ const PATHS: Record<string, string[]> = {
   flagNext: ['M4 21V4h9l-1.5 3.5L13 11H4', 'M16 8l4 4-4 4'],
   chevronDown: ['M6 9l6 6 6-6'],
   search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M20 20l-4-4'],
+  pen: ['M4 20l4-1 11-11-3-3L5 16z', 'M14 6l3 3'],
+  eraser: ['M8 20h12', 'M4.5 14.5l9-9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L12 17H7.5z', 'M9 10l5 5'],
+  undo: ['M9 14L4 9l5-5', 'M4 9h10a6 6 0 0 1 0 12h-3'],
+  trash: ['M4 7h16', 'M10 11v6', 'M14 11v6', 'M6 7l1 13h10l1-13', 'M9 7V4h6v3'],
+  finger: ['M8 13V5a1.5 1.5 0 0 1 3 0v6', 'M11 11V4a1.5 1.5 0 0 1 3 0v7', 'M14 11V6a1.5 1.5 0 0 1 3 0v8a7 7 0 0 1-7 7h-.5a6 6 0 0 1-4.6-2.2L3 15.5a1.5 1.5 0 0 1 2.3-1.9L8 16'],
 };
 
 export function icon(name: keyof typeof PATHS | string): SVGElement {

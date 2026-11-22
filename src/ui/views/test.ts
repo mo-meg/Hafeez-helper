@@ -20,6 +20,7 @@ import type { App } from '../app.ts';
 import { dir, fmtNum, t, t as tr, tn } from '../i18n/index.ts';
 import { categoryLabel, errorText, outcomeLabel, refLabel, scopeLabel, surahName, surahOption } from '../i18n/labels.ts';
 import { h, type Child } from '../dom.ts';
+import { startWrite, writeView } from './write.ts';
 
 type TestKind = 'surah' | 'juz' | 'hizb' | 'quarter';
 const TEST_KINDS: readonly TestKind[] = ['surah', 'juz', 'hizb', 'quarter'];
@@ -103,7 +104,7 @@ function setupView(app: App): Node {
         'div',
         { class: 'row spread', style: { 'margin-top': '0.75rem' } },
         h('span', null, cards.length ? t('test.summary', { ayat: tn('test.ayatToTest', cards.length), mistakes: tn('test.mistakes', mistakes), transitions }) : t(setup.includeResolved ? 'test.noneIn' : 'test.noneUnresolvedIn', { portion: scopeLabel(scopeFromSetup(), index) })),
-        h('button', {
+        h('div', { class: 'row' }, h('button', {
           type: 'button', class: 'primary big', 'data-key': 'test-start', disabled: cards.length === 0 || !app.quran.text,
           onclick: () => void app.act(async () => {
             const scope = scopeFromSetup();
@@ -117,6 +118,10 @@ function setupView(app: App): Node {
             await app.refresh();
           }),
         }, t('test.start')),
+        h('button', {
+          type: 'button', class: 'big', 'data-key': 'write-start', disabled: cards.length === 0 || !app.quran.text,
+          onclick: () => void startWrite(app, scopeFromSetup(), { includeResolved: setup.includeResolved, shuffle: setup.shuffle }),
+        }, t('write.start'))),
       ),
     ),
     h(
@@ -128,6 +133,8 @@ function setupView(app: App): Node {
       h('p', null, t('test.how3')),
       h('p', null, t('test.how4')),
       h('p', { class: 'muted' }, t('test.how5')),
+      h('h3', null, t('write.start')),
+      h('p', null, t('write.how')),
     ),
   );
 }
@@ -272,6 +279,7 @@ function summaryView(app: App, t: ActiveTest): Node {
 }
 
 export function testView(app: App): Node {
+  if (app.write) return writeView(app, app.write, (scope) => testPortion(scope));
   const t = app.test;
   if (!t) return setupView(app);
   if (t.finished) return summaryView(app, t);
