@@ -29,6 +29,7 @@ import { revisionView } from './views/revision.ts';
 import { sessionView } from './views/session.ts';
 import { settingsView } from './views/settings.ts';
 import { testView, type ActiveTest } from './views/test.ts';
+import type { ActiveWrite } from './views/write.ts';
 
 const RECENT_KEY = 'recentReads';
 const RECENT_MAX = 6;
@@ -101,6 +102,8 @@ export class App {
   pendingTitle: Title | null = null;
   active: ActiveSession | null = null;
   test: ActiveTest | null = null;
+  /** "Write from memory" in progress (shown on the Test page). */
+  write: ActiveWrite | null = null;
   readingPosition: AyahRef | null = null;
   /** Recently read places, newest first, one per surah (kept on this device). */
   recentReads: AyahRef[] = [];

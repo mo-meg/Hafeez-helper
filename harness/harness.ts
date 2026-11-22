@@ -390,6 +390,50 @@ async function run() {
     $<HTMLButtonElement>('[data-key="test-new"]')?.click();
   });
 
+  await step('Write from memory: previous ayah clear, whole mistake ayah faint, ink, reveal; practice only', async () => {
+    await go('#/test');
+    setInput(await waitFor(() => $<HTMLSelectElement>('#test-kind'), 'kind'), 'hizb');
+    setInput(await waitFor(() => $<HTMLInputElement>('#test-num'), 'number'), '5');
+    await sleep(50);
+    const reviewsBefore = (await store.reviews.getAll()).length;
+    const statusBefore = (await store.mistakes.getAll()).find((m) => m.globalIndex === 262)?.status;
+    $<HTMLButtonElement>('[data-key="write-start"]')?.click();
+    await waitFor(() => $('.write-target canvas'), 'writing card');
+    check(/2:255/.test($('.write-target')?.textContent ?? ''), 'first card is 2:255');
+    check(/2:254/.test($('.test-prompt')?.textContent ?? '') && !$('.test-prompt .hidden-word'), 'previous ayah 2:254 shown clearly');
+    check($$('.write-target .w').length > 1 && !$('.write-target .hidden-word') && !$('.write-target.revealed'), 'whole ayah present as faint text');
+    check(!!$('.write-target .ayah-end') && !!$('.test-prompt .ayah-end'), 'ayah numbers visible');
+    check(!$('.write-target .w.marked'), 'no mistake emphasis before reveal');
+    const canvas = $<HTMLCanvasElement>('.write-target canvas') as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const pe = (type: string, dx: number) => canvas.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'pen', pressure: 0.5, buttons: type === 'pointerup' ? 0 : 1, clientX: r.left + 20 + dx, clientY: r.top + r.height / 2, bubbles: true, cancelable: true }));
+    pe('pointerdown', 0); pe('pointermove', 30); pe('pointermove', 60); pe('pointerup', 60);
+    check(app.write?.ink.length === 1 && (app.write?.ink[0]?.pts.length ?? 0) >= 9, 'a pen stroke is recorded');
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 8, pointerType: 'touch', clientX: r.left + 5, clientY: r.top + 5, bubbles: true }));
+    canvas.dispatchEvent(new PointerEvent('pointerup', { pointerId: 8, pointerType: 'touch', clientX: r.left + 5, clientY: r.top + 5, bubbles: true }));
+    check(app.write?.ink.length === 1, 'a finger does not draw in stylus-only mode');
+    setInput($<HTMLInputElement>('[data-key="write-size"]') as HTMLInputElement, '150');
+    $<HTMLInputElement>('[data-key="write-size"]')?.dispatchEvent(new Event('input', { bubbles: true }));
+    check($<HTMLElement>('.write-card')?.style.getPropertyValue('--write-scale') === '1.5', 'text size slider sets 150%');
+    $<HTMLButtonElement>('[data-key="write-reveal"]')?.click();
+    await sleep(30);
+    check(!!$('.write-target.revealed') && !!$('.write-target .w.marked'), 'reveal shows the text with the mistake word coloured');
+    check(app.write?.ink.length === 1, 'ink survives the reveal');
+    $<HTMLButtonElement>('[data-key="write-undo"]')?.click();
+    check(app.write?.ink.length === 0, 'undo removes the stroke');
+    $<HTMLButtonElement>('[data-key="write-next"]')?.click();
+    await waitFor(() => /2:260/.test($('.write-target')?.textContent ?? ''), 'second card 2:260');
+    check(!$('.write-target.revealed') && app.write?.ink.length === 0, 'next card starts faint with no ink');
+    $<HTMLButtonElement>('[data-key="write-end"]')?.click();
+    await waitFor(() => /Writing finished/.test($('main h1')?.textContent ?? ''), 'summary');
+    const ws = (await store.sessions.getAll()).find((x) => x.mode === 'write');
+    check(ws?.status === 'completed' && ws.playedAyahIndexes.join() === '262', 'write session saved with the written ayah');
+    check((await store.reviews.getAll()).length === reviewsBefore, 'writing records no review');
+    check((await store.mistakes.getAll()).find((m) => m.globalIndex === 262)?.status === statusBefore, 'mistake status unchanged');
+    $<HTMLButtonElement>('[data-key="write-new"]')?.click();
+    await waitFor(() => $('[data-key="test-start"]'), 'back to setup');
+  });
+
   await step('Test: two mistakes in one ayah, reveal stops before the second one', async () => {
     await app.s.mistakes.markWord({ surah: 2, ayah: 257 }, { position: 2, tokenText: 'كلمة', edition: 'synthetic-fixture' }, { category: 'forgotten' });
     await app.s.mistakes.markWord({ surah: 2, ayah: 257 }, { position: 4, tokenText: 'كلمة', edition: 'synthetic-fixture' }, { category: 'incorrect_word' });
@@ -896,6 +940,27 @@ async function run() {
     }
     $<HTMLButtonElement>('[data-key="test-reveal"]')?.click();
     await sleep(30);
+    window.scrollTo(0, 0);
+  } else if (showcase === 'live-write') {
+    await go('#/test');
+    setInput(await waitFor(() => $<HTMLSelectElement>('#test-kind'), 'kind'), 'hizb');
+    setInput(await waitFor(() => $<HTMLInputElement>('#test-num'), 'number'), '5');
+    await sleep(50);
+    $<HTMLButtonElement>('[data-key="write-start"]')?.click();
+    await waitFor(() => $('.write-target canvas'), 'writing card');
+    const w = app.write;
+    const c = $<HTMLCanvasElement>('.write-target canvas');
+    if (w && c) {
+      // A sample of handwriting-like ink over the first half of the ayah.
+      const { width, height } = c.getBoundingClientRect();
+      for (let k = 0; k < 4; k++) {
+        const pts: number[] = [];
+        const x0 = width * (0.92 - k * 0.11);
+        for (let i = 0; i <= 24; i++) pts.push(x0 - i * 3, height * 0.42 + Math.sin(i / 2.4 + k) * 9, 3.6);
+        w.ink.push({ pts });
+      }
+      app.render(true);
+    }
     window.scrollTo(0, 0);
   } else if (showcase === 'hafeez-mode') {
     await go('#/quran?hizb=5');

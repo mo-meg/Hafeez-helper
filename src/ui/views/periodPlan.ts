@@ -21,6 +21,7 @@ import { fmtDateKey, fmtNum, t, tn } from '../i18n/index.ts';
 import { errorText, scopeLabel } from '../i18n/labels.ts';
 import { sessionConfigFor } from './revision.ts';
 import { testPortion } from './test.ts';
+import { openWrite } from './write.ts';
 
 /** Progress of the plan in preferences, or null when none is set. */
 export function currentPeriod(app: App): PeriodProgress | null {
@@ -52,7 +53,7 @@ const reciteText = (d: DayProgress) => (d.recite.marked ? t('step.recitedMarked'
 
 /**
  * The two steps of a revision day with their progress and actions:
- * 1. revise the portion's mistakes (mistakes session or test), 2. recite the portion (listen, read, or mark).
+ * 1. revise the portion's mistakes (listen, read, write from memory or test), 2. recite the portion (listen, read, or mark).
  * `leave` runs before navigating away (e.g. closes the dialog).
  */
 function daySteps(app: App, d: DayProgress, leave: () => void = () => {}): HTMLElement | null {
@@ -87,8 +88,10 @@ function daySteps(app: App, d: DayProgress, leave: () => void = () => {}): HTMLE
         ? h(
             'div',
             { class: 'row' },
-            h('button', { type: 'button', class: 'primary', 'data-key': 'step-mistakes', onclick: go(() => app.prepare(sessionConfigFor(app, scope, 'mistakes', d.planId))) }, t('step.reviseMistakes')),
-            h('button', { type: 'button', 'data-key': 'step-test', onclick: go(() => { testPortion(scope); app.navigate('#/test'); }) }, t('step.takeTest')),
+            h('button', { type: 'button', class: 'primary', 'data-key': 'step-mistakes', onclick: go(() => app.prepare(sessionConfigFor(app, scope, 'mistakes', d.planId))) }, t('step.listen')),
+            h('a', { class: 'btn', 'data-key': 'step-read-mistakes', href: readHref(app, scope), onclick: () => leave() }, t('step.read')),
+            h('button', { type: 'button', 'data-key': 'step-write', onclick: go(() => void openWrite(app, scope, testPortion)) }, t('step.write')),
+            h('button', { type: 'button', 'data-key': 'step-test', onclick: go(() => { testPortion(scope); app.navigate('#/test'); }) }, t('step.test')),
           )
         : null,
     ),

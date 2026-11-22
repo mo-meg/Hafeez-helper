@@ -9,6 +9,8 @@ import { scopePicker } from '../components/scopePicker.ts';
 import { formatDate, formatDuration, h } from '../dom.ts';
 import { fmtDate, fmtDateKey, fmtNum, t, tn, type MessageKey } from '../i18n/index.ts';
 import { errorText, refLabel, scopeLabel } from '../i18n/labels.ts';
+import { testPortion } from './test.ts';
+import { openWrite } from './write.ts';
 
 const MODES: ReadonlyArray<{ mode: SessionMode; title: MessageKey; text: MessageKey }> = [
   { mode: 'mistakes', title: 'mode.mistakes', text: 'rev.modeMistakesText' },
@@ -109,6 +111,8 @@ function planCard(app: App, plan: DailyPlan): HTMLElement {
       { class: 'row', style: { 'margin-top': '1rem' } },
       h('button', { type: 'button', class: 'primary big', 'data-key': 'start-revision', onclick: () => app.prepare(sessionConfigFor(app, plan.scope, mode, plan.id)) }, t('rev.start')),
       h('a', { class: 'btn', href: `#/quran?${plan.scope.type === 'division' ? `${plan.scope.kind}=${plan.scope.number}` : `focus=${iv[0]?.start ?? 1}&surah=${fromIndex(iv[0]?.start ?? 1).surah}`}` }, t('rev.read')),
+      unresolved.length ? h('button', { type: 'button', 'data-key': 'rev-write', onclick: () => void openWrite(app, plan.scope, testPortion) }, t('rev.write')) : null,
+      unresolved.length ? h('button', { type: 'button', 'data-key': 'rev-test', onclick: () => { testPortion(plan.scope); app.navigate('#/test'); } }, t('rev.test')) : null,
       plan.status !== 'completed' ? h('button', { type: 'button', onclick: () => void app.act(async () => { await app.s.plans.setPlanStatus(plan.id, 'completed'); await app.refresh(); }, t('rev.markedDone')) }, t('rev.doneWithout')) : null,
     ),
     next ? h('p', { class: 'muted', style: { 'margin-top': '0.75rem' } }, h('button', { type: 'button', class: 'quiet', onclick: () => void setTomorrow(app, next) }, t('rev.planTomorrow', { portion: scopeLabel(next, index) }))) : null,

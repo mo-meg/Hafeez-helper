@@ -122,7 +122,7 @@ const ratio = (covered: number, total: number) => (total ? Math.min(1, covered /
  * Progress of each revision day, in two steps, counted from what happened on that day or later in
  * the period (so a missed day can be caught up):
  * 1. Mistakes: of the portion's ayat that had an open mistake on that day, the share revised in a
- *    mistakes (or combined) session or answered in a test/recall. Nothing to check counts as done.
+ *    mistakes (or combined) session, written from memory, or answered in a test/recall. Nothing to check counts as done.
  * 2. Recitation: the share of the portion played to the end in a full (or combined) listening
  *    session, or all of it once the user marks "I recited it".
  * A day is done when both steps are complete, or when the user marks the whole day as done.
@@ -130,7 +130,7 @@ const ratio = (covered: number, total: number) => (total ? Math.min(1, covered /
 export function periodProgress(input: PeriodInput): PeriodProgress {
   const { plan, index } = input;
   const today = localDateKey(input.now);
-  const checkSeen = lastSeen(plan, [...played(input.sessions, ['mistakes', 'combined']), ...answered(input.reviews)]);
+  const checkSeen = lastSeen(plan, [...played(input.sessions, ['mistakes', 'combined', 'write']), ...answered(input.reviews)]);
   const reciteSeen = lastSeen(plan, played(input.sessions, ['full', 'combined']));
   const byDate = new Map(input.dailyPlans.filter((p) => p.kind === 'revision' && p.date >= plan.start && p.date <= plan.end).map((p) => [p.date, p]));
   const mistakes = input.mistakes.filter((m) => !m.demo);

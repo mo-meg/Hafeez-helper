@@ -554,6 +554,35 @@ body.focus-reading.hafeez-hide main { padding-bottom: calc(50vh + 5rem + env(saf
 .w.revealed.marked.resolved { color: var(--sage); }
 .test-card span.w { cursor: default; }
 
+/* ---------- write from memory ---------- */
+.write-card { --write-scale: 1.7; --write-ghost: 7%; }
+.write-card .quran { font-size: calc(1.6rem * var(--write-scale)); }
+.write-card .surah-head .ar { font-size: calc(1.5rem * var(--write-scale)); }
+.write-card .basmala { font-size: calc(1.45rem * var(--write-scale)); }
+.write-card .ayah-end { cursor: default; }
+.write-card .ayah-end:hover { background: transparent; }
+/* Faint ghost words (like Hafeez mode); the ayah number stays clear. */
+.write-target:not(.revealed) .w,
+.write-target:not(.revealed) .pause-mark { color: color-mix(in srgb, var(--ink) var(--write-ghost), transparent); }
+.write-target.revealed .w { color: var(--ink); }
+.write-target.revealed .w.marked { color: var(--mistake); }
+.write-surface { position: relative; padding: 0.25rem 0; }
+.write-surface .ink {
+  position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair;
+  color: var(--accent); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.write-surface .ink.erasing { cursor: cell; }
+.write-target.revealed .ink { opacity: 0.75; }
+.write-toolbar {
+  position: sticky; top: var(--topbar, 0); z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem;
+  margin: -0.25rem 0 0.75rem; padding: 0.5rem 0.25rem; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.write-range { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; }
+.write-range input[type='range'] { width: 7.5rem; }
+.write-val { min-width: 2.8em; font-variant-numeric: tabular-nums; color: var(--mist); }
+.write-tools { display: inline-flex; gap: 0.25rem; margin-inline-start: auto; }
+.write-tools [aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
 /* ---------- account: sign-in screens and sync status ---------- */
 .auth-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 1rem 2rem; }
 .auth-top { width: 100%; max-width: 30rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.25rem 0 1.5rem; }

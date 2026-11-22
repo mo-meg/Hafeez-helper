@@ -95,7 +95,7 @@ const PlanSchema = z.object({
 const SessionSchema = z.object({
   id: z.string().min(1),
   planId: z.string().nullable(),
-  mode: z.enum(['mistakes', 'full', 'combined', 'test']),
+  mode: z.enum(['mistakes', 'full', 'combined', 'test', 'write']),
   scope: ScopeSchema,
   startedAt: iso,
   endedAt: iso.nullable(),

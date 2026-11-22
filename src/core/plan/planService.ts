@@ -160,6 +160,15 @@ export class PlanService {
     return updated;
   }
 
+  /** Records that an ayah was written from memory (write sessions). Practice evidence only: mistakes are untouched. */
+  async recordWritten(sessionId: string, globalIndex: number): Promise<RevisionSession> {
+    const s = await this.requireSession(sessionId);
+    const written = s.playedAyahIndexes.includes(globalIndex) ? s.playedAyahIndexes : [...s.playedAyahIndexes, globalIndex];
+    const updated: RevisionSession = { ...s, completedSteps: written.length, playedAyahIndexes: written };
+    await this.store.sessions.put(updated);
+    return updated;
+  }
+
   /** Records how many test cards were answered (test sessions). */
   async recordTestProgress(sessionId: string, answered: number): Promise<RevisionSession> {
     const s = await this.requireSession(sessionId);
