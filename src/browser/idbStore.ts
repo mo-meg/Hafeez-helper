@@ -19,7 +19,7 @@ export function deleteDatabase(name: string): Promise<void> {
   });
 }
 /** IndexedDB structural version. Upgrades are applied step by step in `upgrade`. */
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const RECORD_STORES = ['mistakes', 'reviews', 'mistakeEvents', 'plans', 'sessions'] as const;
 const KV_STORES = ['settings', 'quranData', 'audio'] as const;
 
@@ -39,7 +39,12 @@ function upgrade(db: IDBDatabase, oldVersion: number): void {
     }
     for (const name of KV_STORES) db.createObjectStore(name);
   }
-  // Future: if (oldVersion < 2) { ... }
+  // Version 1 -> 2: Wird Planner (plans and their tasks).
+  if (oldVersion < 2) {
+    db.createObjectStore('wirdPlans', { keyPath: 'id' });
+    db.createObjectStore('wirdTasks', { keyPath: 'id' }).createIndex('planId', 'planId');
+  }
+  // Future: if (oldVersion < 3) { ... }
 }
 
 export function openDatabase(name = DB_NAME): Promise<IDBDatabase> {
@@ -125,6 +130,8 @@ export async function createIdbStore(name = DB_NAME): Promise<Store> {
     mistakeEvents: new IdbTable(db, 'mistakeEvents'),
     plans: new IdbTable(db, 'plans'),
     sessions: new IdbTable(db, 'sessions'),
+    wirdPlans: new IdbTable(db, 'wirdPlans'),
+    wirdTasks: new IdbTable(db, 'wirdTasks'),
     settings: new IdbKeyValue(db, 'settings'),
     quranData: new IdbKeyValue(db, 'quranData'),
     audio: new IdbKeyValue(db, 'audio'),

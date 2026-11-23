@@ -4,6 +4,7 @@ import { PlanService } from './plan/planService.ts';
 import { normalizePreferences, type Preferences } from './settings/preferences.ts';
 import type { Store } from './storage/store.ts';
 import type { Clock, IdGenerator } from './util/ids.ts';
+import { WirdService } from './wird/wirdService.ts';
 
 export class PreferencesRepository {
   private readonly store: Store;
@@ -26,6 +27,7 @@ export interface AppServices {
   readonly ids: IdGenerator;
   readonly mistakes: MistakeService;
   readonly plans: PlanService;
+  readonly wird: WirdService;
   readonly quran: QuranDataService;
   readonly preferences: PreferencesRepository;
 }
@@ -39,6 +41,7 @@ export function createServices(deps: { store: Store; clock: Clock; ids: IdGenera
     ids,
     mistakes: new MistakeService({ store, clock, ids }),
     plans: new PlanService({ store, clock, ids }),
+    wird: new WirdService({ store, clock, ids }),
     quran: new QuranDataService({ cache: store.quranData, fetcher: deps.fetcher, ...(deps.bundledDataBase ? { bundledBase: deps.bundledDataBase } : {}) }),
     preferences: new PreferencesRepository(store),
   };

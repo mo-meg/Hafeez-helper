@@ -745,8 +745,52 @@ async function run() {
     }
   });
 
+  await step('Wird planner: create a plan in the editor, tick units, overdue carries over, other views', async () => {
+    await go('#/wird?tab=plans&edit=new');
+    const name = await waitFor(() => $<HTMLInputElement>('[data-key="wird-name"]'), 'plan editor');
+    name.value = 'Madinah Revision';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    const nums = $$<HTMLInputElement>('.wird-editor fieldset input[type="number"]');
+    for (const [el, v] of [[nums[0], '13'], [nums[1], '30']] as const) {
+      if (!el) throw new Error('range inputs missing');
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    // Every day a revision day, so the journey works on any weekday.
+    for (const sel of $$<HTMLSelectElement>('.day-kinds select')) setInput(sel, 'rev');
+    check($$('.week-preview tbody tr').length === 7, 'weekly preview shows 7 days');
+    $<HTMLButtonElement>('[data-key="wird-save"]')?.click();
+    const card = await waitFor(() => byText('.wird-card h3', 'Madinah Revision')?.closest<HTMLElement>('.wird-card'), 'Madinah card on Today');
+    check($$('.unit-chip', card).length === 3, `Hizb 13–30 over 7 days starts with 3 units (got ${$$('.unit-chip', card).length})`);
+    // A second, independent plan that started three days ago and was never done → overdue.
+    const start = new Date();
+    start.setDate(start.getDate() - 3);
+    const key = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+    await app.s.wird.createPlan({ name: 'Morocco Revision', color: 1, startDate: key, config: { unit: 'hizb', from: 1, to: 10, revisionDays: [0, 1, 2, 3, 4, 5, 6], fullDays: [], weekStart: 6, cycle: 'daily', distribution: 'auto', manual: [], allowGaps: false, dailyAmount: 2, targetDate: null, carry: 'strict', fullDayOverdue: 'full_plus_overdue' } });
+    await app.refresh();
+    const morocco = await waitFor(() => byText('.wird-card h3', 'Morocco Revision')?.closest<HTMLElement>('.wird-card'), 'Morocco card');
+    check($$('.wird-sec.overdue', morocco).length === 3, 'three missed days shown as overdue, by day');
+    check($$('.wird-sec.overdue .unit-chip', morocco).length === 6, 'six overdue units');
+    // Tick one Madinah unit: Morocco is untouched.
+    ($('.unit-chip', card) as HTMLButtonElement).click();
+    await waitFor(() => byText('.wird-card h3', 'Madinah Revision')?.closest('.wird-card')?.querySelector('.unit-chip[aria-pressed="true"]'), 'unit ticked');
+    check(!$('.wird-card[data-plan] .unit-chip[aria-pressed="true"]', byText('.wird-card h3', 'Morocco Revision')?.closest('.wird-card') as ParentNode), 'other plan unaffected');
+    // Mark all of Morocco done → completed; quality is optional (toast offers it).
+    ($('[data-key^="wird-all-"]', byText('.wird-card h3', 'Morocco Revision')?.closest('.wird-card') as ParentNode) as HTMLButtonElement).click();
+    await waitFor(() => byText('.wird-card h3', 'Morocco Revision')?.closest('.wird-card')?.classList.contains('done'), 'Morocco completed');
+    check(!!$('[data-key="wird-rate"]'), 'rating offered, not required');
+    await go('#/wird?tab=week');
+    check($$('.week-day').length === 7 && $$('.week-entry').length >= 8, 'week view shows both plans');
+    await go('#/wird?tab=stats');
+    check($$('.wird-stats .metric').length === 7, 'statistics metrics');
+    await go('#/wird?tab=history');
+    check($$('.history-row').length >= 4, 'history lists completed units');
+    await go('#/dashboard');
+    check($$('.wird-card').length === 2, "dashboard shows today's wird for both plans");
+  });
+
   await step('Every button and link has an accessible name on each page', async () => {
-    for (const r of ['#/dashboard', '#/quran?hizb=5', '#/revision', '#/mistakes', '#/test', '#/progress', '#/settings']) {
+    for (const r of ['#/dashboard', '#/wird', '#/wird?tab=week', '#/wird?tab=plans', '#/wird?tab=stats', '#/wird?tab=history', '#/quran?hizb=5', '#/revision', '#/mistakes', '#/test', '#/progress', '#/settings']) {
       await go(r);
       const unnamed = $$('main button, main a, .rail a').filter((el) => !(el.textContent?.trim() || el.getAttribute('aria-label')));
       check(unnamed.length === 0, `${r}: ${unnamed.length} unnamed controls`);
@@ -918,6 +962,7 @@ async function run() {
 
   // Arabic showcases also use the light theme, so both themes can be reviewed visually.
   if (showcase && showcaseLang === 'ar') await app.savePrefs({ ...app.prefs, language: 'ar', theme: 'light' });
+  if (showcase.startsWith('#/wird') || showcase === '#/dashboard') await seedWird(app);
   if (showcase === 'login-screen') {
     replaceAuthScreen();
   } else if (showcase === 'live-session') {
@@ -1010,6 +1055,25 @@ async function run() {
   } else if (showcase) await go(showcase);
   else await go('#/dashboard');
   report(storeKind);
+}
+
+/** Showcase data for the Wird planner: two plans with nine days of mixed history. */
+async function seedWird(app: App) {
+  const d = new Date();
+  d.setDate(d.getDate() - 9);
+  const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const base = { weekStart: 6 as const, distribution: 'auto' as const, manual: [], allowGaps: false, targetDate: null, startOffset: 0 };
+  await app.s.wird.createPlan({ name: app.prefs.language === 'ar' ? 'مراجعة المدينة' : 'Madinah Revision', color: 0, startDate: start, config: { ...base, unit: 'hizb', from: 13, to: 30, revisionDays: [0, 1, 2, 3, 4], fullDays: [5], cycle: 'weekly', dailyAmount: 1, carry: 'strict', fullDayOverdue: 'full_plus_overdue' } });
+  await app.s.wird.createPlan({ name: app.prefs.language === 'ar' ? 'مراجعة المغرب' : 'Morocco Revision', color: 2, startDate: start, config: { ...base, unit: 'hizb', from: 1, to: 10, revisionDays: [0, 1, 2, 3, 4], fullDays: [6], cycle: 'weekly', dailyAmount: 1, carry: 'priority', fullDayOverdue: 'full_plus_overdue' } });
+  await app.s.wird.refresh();
+  const today = app.today();
+  const qualities = ['excellent', 'good', 'good', 'needs_practice', 'weak'] as const;
+  const tasks = (await app.s.store.wirdTasks.getAll()).filter((t) => t.date < today);
+  let i = 0;
+  // Most days done, one day of each plan left open (it carries over to today).
+  const updated = tasks.map((t, k) => (k % 4 === 2 ? t : { ...t, units: t.units.map((u) => ({ ...u, doneAt: `${t.date}T19:00:00.000Z`, doneOn: t.date, quality: qualities[i++ % qualities.length] ?? null })) }));
+  await app.s.store.wirdTasks.putMany(updated);
+  await app.refresh();
 }
 
 /** Showcase: the sign-in screen (not resolved; nothing is submitted). */

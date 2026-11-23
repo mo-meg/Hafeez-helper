@@ -28,6 +28,9 @@ git push -u origin main
    and press **Run**. It creates one table, `user_records`, with Row Level Security so every user
    can only read and write their own rows, plus a `delete_my_account()` function used by
    Settings → Account → Delete account.
+   **Existing projects** set up before the Wird planner: also run
+   [`supabase/migrations/002_wird.sql`](../supabase/migrations/002_wird.sql) once, before deploying
+   the new build (it allows the `wirdPlans` / `wirdTasks` rows; without it their upload is rejected).
 3. **Project Settings → API**: copy the **Project URL** (`https://xxxx.supabase.co`) and the
    **anon public** key. Both are meant to be public; never use the `service_role` key in the app.
 

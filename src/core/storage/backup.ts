@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { MISTAKE_CATEGORIES, MISTAKE_STATUSES, RECALL_OUTCOMES, type DailyPlan, type Mistake, type MistakeEvent, type ReviewEvent, type RevisionSession } from '../model.ts';
 import { isValidRef, toIndex } from '../quran/refs.ts';
 import { normalizePreferences, RepeatConfigSchema, type Preferences } from '../settings/preferences.ts';
+import { WirdPlanSchema, WirdTaskSchema, type WirdPlan, type WirdTask } from '../wird/model.ts';
 import { SCHEMA_VERSION, type Store } from './store.ts';
 
 const iso = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'invalid timestamp');
@@ -110,7 +111,7 @@ const SessionSchema = z.object({
 });
 
 /** Per-table record validators, shared with cloud sync (remote rows are validated before use). */
-export const RECORD_SCHEMAS = { mistakes: MistakeSchema, reviews: ReviewSchema, mistakeEvents: EventSchema, plans: PlanSchema, sessions: SessionSchema } as const;
+export const RECORD_SCHEMAS = { mistakes: MistakeSchema, reviews: ReviewSchema, mistakeEvents: EventSchema, plans: PlanSchema, sessions: SessionSchema, wirdPlans: WirdPlanSchema, wirdTasks: WirdTaskSchema } as const;
 
 export const BackupSchema = z.object({
   app: z.literal('hafeez-helfer'),
@@ -122,6 +123,8 @@ export const BackupSchema = z.object({
     mistakeEvents: z.array(EventSchema),
     plans: z.array(PlanSchema),
     sessions: z.array(SessionSchema),
+    wirdPlans: z.array(WirdPlanSchema),
+    wirdTasks: z.array(WirdTaskSchema),
     preferences: z.unknown().optional(),
   }),
 });
@@ -137,6 +140,8 @@ export interface Backup {
     readonly mistakeEvents: readonly MistakeEvent[];
     readonly plans: readonly DailyPlan[];
     readonly sessions: readonly RevisionSession[];
+    readonly wirdPlans: readonly WirdPlan[];
+    readonly wirdTasks: readonly WirdTask[];
     readonly preferences?: unknown;
   };
 }
@@ -150,9 +155,12 @@ export class BackupError extends Error {
 
 /**
  * Migrations from older backup schema versions to the current one. Each entry upgrades
- * version N to N+1. (Version 1 is the first released schema, so the list is empty.)
+ * version N to N+1.
  */
-const MIGRATIONS: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {};
+const MIGRATIONS: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {
+  // 1 -> 2: Wird Planner tables (empty in older backups).
+  1: (raw) => ({ ...raw, data: { ...(raw.data as Record<string, unknown>), wirdPlans: [], wirdTasks: [] } }),
+};
 
 export function migrateBackup(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
@@ -179,6 +187,8 @@ export async function exportBackup(store: Store, now: Date): Promise<Backup> {
       mistakeEvents: await store.mistakeEvents.getAll(),
       plans: await store.plans.getAll(),
       sessions: await store.sessions.getAll(),
+      wirdPlans: await store.wirdPlans.getAll(),
+      wirdTasks: await store.wirdTasks.getAll(),
       preferences: await store.settings.get('preferences'),
     },
   };
@@ -193,6 +203,9 @@ export function parseBackup(json: unknown): Backup {
   }
   const d = parsed.data.data;
   const ids = new Set(d.mistakes.map((m) => m.id));
+  const planIds = new Set(d.wirdPlans.map((p) => p.id));
+  const orphanTask = d.wirdTasks.find((t) => !planIds.has(t.planId));
+  if (orphanTask) throw new BackupError(`Backup references a Wird plan that does not exist (${orphanTask.planId}).`);
   const orphan = d.reviews.find((r) => !ids.has(r.mistakeId)) ?? d.mistakeEvents.find((e) => !ids.has(e.mistakeId));
   if (orphan) throw new BackupError(`Backup references a mistake that does not exist (${orphan.mistakeId}).`);
   return parsed.data as Backup;
@@ -203,6 +216,7 @@ export interface RestoreSummary {
   readonly reviews: number;
   readonly plans: number;
   readonly sessions: number;
+  readonly wirdPlans: number;
 }
 
 /**
@@ -212,7 +226,7 @@ export interface RestoreSummary {
 export async function restoreBackup(store: Store, backup: Backup, mode: 'replace' | 'merge'): Promise<{ summary: RestoreSummary; preferences: Preferences | null }> {
   const d = backup.data;
   if (mode === 'replace') {
-    await Promise.all([store.mistakes.clear(), store.reviews.clear(), store.mistakeEvents.clear(), store.plans.clear(), store.sessions.clear()]);
+    await Promise.all([store.mistakes.clear(), store.reviews.clear(), store.mistakeEvents.clear(), store.plans.clear(), store.sessions.clear(), store.wirdPlans.clear(), store.wirdTasks.clear()]);
     await store.mistakes.putMany(d.mistakes);
   } else {
     const current = new Map((await store.mistakes.getAll()).map((m) => [m.id, m]));
@@ -226,16 +240,18 @@ export async function restoreBackup(store: Store, backup: Backup, mode: 'replace
   await store.mistakeEvents.putMany(d.mistakeEvents);
   await store.plans.putMany(d.plans);
   await store.sessions.putMany(d.sessions);
+  await store.wirdPlans.putMany(d.wirdPlans);
+  await store.wirdTasks.putMany(d.wirdTasks);
   let preferences: Preferences | null = null;
   if (d.preferences !== undefined && mode === 'replace') {
     preferences = normalizePreferences(d.preferences);
     await store.settings.set('preferences', preferences);
   }
-  return { summary: { mistakes: d.mistakes.length, reviews: d.reviews.length, plans: d.plans.length, sessions: d.sessions.length }, preferences };
+  return { summary: { mistakes: d.mistakes.length, reviews: d.reviews.length, plans: d.plans.length, sessions: d.sessions.length, wirdPlans: d.wirdPlans.length }, preferences };
 }
 
-/** Deletes every personal record (mistakes, reviews, plans, sessions, preferences). */
+/** Deletes every personal record (mistakes, reviews, plans, sessions, Wird plans and tasks, preferences). */
 export async function wipePersonalData(store: Store): Promise<void> {
-  await Promise.all([store.mistakes.clear(), store.reviews.clear(), store.mistakeEvents.clear(), store.plans.clear(), store.sessions.clear()]);
+  await Promise.all([store.mistakes.clear(), store.reviews.clear(), store.mistakeEvents.clear(), store.plans.clear(), store.sessions.clear(), store.wirdPlans.clear(), store.wirdTasks.clear()]);
   await store.settings.delete('preferences');
 }

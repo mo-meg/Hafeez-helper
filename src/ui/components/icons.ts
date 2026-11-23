@@ -4,6 +4,7 @@ import { s } from '../dom.ts';
 const PATHS: Record<string, string[]> = {
   dashboard: ['M4 13h7V4H4z', 'M13 20h7v-9h-7z', 'M13 4v5h7V4z', 'M4 20h7v-5H4z'],
   quran: ['M12 6c-2-1.5-5-2-8-1.5V19c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V4.5C17 4 14 4.5 12 6z', 'M12 6v14.5'],
+  wird: ['M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z', 'M5 17a3 3 0 0 1 3-3h11', 'M9 8h6'],
   revision: ['M4 6h16v14H4z', 'M4 10h16', 'M8 3v4', 'M16 3v4', 'M9 15l2 2 4-4'],
   mistakes: ['M5 21V4', 'M5 4h11l-2 4 2 4H5'],
   mic: ['M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z', 'M5 11a7 7 0 0 0 14 0', 'M12 18v3'],

@@ -4,7 +4,7 @@
 
 create table if not exists public.user_records (
   user_id    uuid        not null references auth.users (id) on delete cascade,
-  tbl        text        not null check (tbl in ('mistakes', 'reviews', 'mistakeEvents', 'plans', 'sessions', 'settings')),
+  tbl        text        not null check (tbl in ('mistakes', 'reviews', 'mistakeEvents', 'plans', 'sessions', 'wirdPlans', 'wirdTasks', 'settings')),
   id         text        not null check (char_length(id) between 1 and 200),
   data       jsonb,
   deleted    boolean     not null default false,

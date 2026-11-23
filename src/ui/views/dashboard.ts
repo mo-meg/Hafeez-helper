@@ -3,7 +3,7 @@ import type { Mistake } from '../../core/model.ts';
 import { DEFAULT_SCORING } from '../../core/review/scoring.ts';
 import { effectiveDueDate } from '../../core/review/scheduler.ts';
 import type { App } from '../app.ts';
-import { currentPeriod, periodPanel, todayGoal } from './periodPlan.ts';
+import { todaySection } from './wirdCard.ts';
 import { bar } from '../components/charts.ts';
 import { h, relativeDays, type Child } from '../dom.ts';
 import { fmtList, fmtNum, t, tn } from '../i18n/index.ts';
@@ -85,8 +85,6 @@ export function dashboardView(app: App): Node {
   const fresh = d.totalMistakes === 0 && app.data.plans.length === 0;
   const maxCat = Math.max(1, ...d.categories.map((c) => c.total));
   const metric = (value: number, label: string, cls = '') => h('div', { class: `metric ${cls}` }, h('div', { class: 'value' }, fmtNum(value)), h('div', { class: 'label' }, label));
-  const period = currentPeriod(app);
-  const panel = periodPanel(app, period);
   const todayMetrics = h('div', { class: 'metrics', style: { 'margin-top': '1rem' } }, metric(d.ayatReviewedToday, t('dash.recalledToday')), metric(d.streakDays, tn('dash.streak', d.streakDays), d.streakDays > 0 ? 'good' : ''));
 
   return h(
@@ -109,11 +107,11 @@ export function dashboardView(app: App): Node {
           h('p', { class: 'muted' }, t('dash.demoHint')),
         )
       : null,
-    // 1. Today: the goal from the plan, and what is due.
+    // 1. Today: the wird of every active plan, and the mistakes that are due.
     h(
       'div',
       { class: 'grid two' },
-      todayGoal(app, period, panel, todayMetrics),
+      h('div', { class: 'stack' }, todaySection(app, { compact: true }), todayMetrics),
       h(
         'section',
         { class: 'panel' },
@@ -128,8 +126,6 @@ export function dashboardView(app: App): Node {
         d.upcoming.length ? h('div', null, h('h3', { style: { 'margin-top': '1rem' } }, t('dash.comingUp')), h('ul', { class: 'activity' }, d.upcoming.slice(0, 5).map((m) => h('li', null, h('span', null, refLabel(m)), h('span', { class: 'when' }, relativeDays(effectiveDueDate(m)?.toISOString() ?? null, app.now())))))) : null,
       ),
     ),
-    // 2. The week or month plan.
-    h('div', { style: { margin: '1rem 0' } }, panel.el),
     // 3. Numbers at a glance.
     h('h2', { class: 'section-title' }, t('dash.overview')),
     h(

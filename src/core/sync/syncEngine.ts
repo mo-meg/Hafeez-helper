@@ -341,6 +341,8 @@ export class SyncEngine {
       mistakeEvents: table('mistakeEvents', base.mistakeEvents),
       plans: table('plans', base.plans),
       sessions: table('sessions', base.sessions),
+      wirdPlans: table('wirdPlans', base.wirdPlans),
+      wirdTasks: table('wirdTasks', base.wirdTasks),
       settings,
       quranData: base.quranData,
       audio: base.audio,

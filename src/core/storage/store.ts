@@ -1,4 +1,5 @@
 import type { DailyPlan, Mistake, MistakeEvent, ReviewEvent, RevisionSession } from '../model.ts';
+import type { WirdPlan, WirdTask } from '../wird/model.ts';
 
 export interface Identified {
   readonly id: string;
@@ -28,6 +29,9 @@ export interface Store {
   readonly mistakeEvents: Table<MistakeEvent>;
   readonly plans: Table<DailyPlan>;
   readonly sessions: Table<RevisionSession>;
+  /** Wird Planner: revision plans and their generated daily / full-revision tasks. */
+  readonly wirdPlans: Table<WirdPlan>;
+  readonly wirdTasks: Table<WirdTask>;
   /** Preferences and small app state. Part of backups. */
   readonly settings: KeyValue;
   /** Downloaded Quran text/division datasets. NOT part of personal backups. */
@@ -37,6 +41,6 @@ export interface Store {
 }
 
 /** Version of the personal-data schema. Bump with a migration in migrations.ts. */
-export const SCHEMA_VERSION = 1;
-export const TABLE_NAMES = ['mistakes', 'reviews', 'mistakeEvents', 'plans', 'sessions'] as const;
+export const SCHEMA_VERSION = 2;
+export const TABLE_NAMES = ['mistakes', 'reviews', 'mistakeEvents', 'plans', 'sessions', 'wirdPlans', 'wirdTasks'] as const;
 export type TableName = (typeof TABLE_NAMES)[number];

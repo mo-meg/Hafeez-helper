@@ -49,6 +49,8 @@ export function createMemoryStore(): Store {
     mistakeEvents: new MemoryTable(),
     plans: new MemoryTable(),
     sessions: new MemoryTable(),
+    wirdPlans: new MemoryTable(),
+    wirdTasks: new MemoryTable(),
     settings: new MemoryKeyValue(),
     quranData: new MemoryKeyValue(),
     audio: new MemoryKeyValue(),

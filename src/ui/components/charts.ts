@@ -43,3 +43,9 @@ export function bar(value: number, max: number, red = false): HTMLElement {
   const pct = max > 0 ? Math.round((100 * value) / max) : 0;
   return h('div', { class: `bar${red ? ' red' : ''}`, role: 'presentation' }, h('span', { style: { width: `${pct}%` } }));
 }
+
+/** Accessible progress bar (0..1). */
+export function progressBar(fraction: number, label: string): HTMLElement {
+  const p = Math.round(Math.max(0, Math.min(1, fraction)) * 100);
+  return h('div', { class: 'progress-track', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(p), 'aria-label': label }, h('span', { style: { width: `${p}%` } }));
+}
