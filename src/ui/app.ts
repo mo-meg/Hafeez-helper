@@ -13,6 +13,9 @@ import type { CueKind } from '../core/playlist/sequence.ts';
 import { istiadhaUrls } from '../core/audio/reciters.ts';
 import type { Preferences } from '../core/settings/preferences.ts';
 import { localDateKey } from '../core/util/ids.ts';
+import type { UnitRef } from '../core/wird/engine.ts';
+import { configFromPeriod } from '../core/wird/migrate.ts';
+import type { WirdPlan, WirdTask } from '../core/wird/model.ts';
 import { dir, getLocale, setLocale, t, type Locale, type MessageKey } from './i18n/index.ts';
 import { errorText, refLabel, scopeLabel } from './i18n/labels.ts';
 import type { AutoScrollSession } from './components/autoScroll.ts';
@@ -29,6 +32,7 @@ import { revisionView } from './views/revision.ts';
 import { sessionView } from './views/session.ts';
 import { settingsView } from './views/settings.ts';
 import { testView, type ActiveTest } from './views/test.ts';
+import { wirdView } from './views/wird.ts';
 import type { ActiveWrite } from './views/write.ts';
 
 const RECENT_KEY = 'recentReads';
@@ -59,12 +63,13 @@ export interface AppDeps {
   readonly enableReminders?: boolean;
 }
 
-export type RouteName = 'dashboard' | 'quran' | 'recite' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
+export type RouteName = 'dashboard' | 'wird' | 'quran' | 'recite' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
 declare const __RECITE_ENABLED__: boolean | undefined;
 /** The Recitation tracker needs a recognition server; production builds hide it (see scripts/build.mjs). */
 const RECITE_ENABLED = typeof __RECITE_ENABLED__ === 'boolean' && __RECITE_ENABLED__;
 const ALL_NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
   { name: 'dashboard', label: 'nav.dashboard', icon: 'dashboard' },
+  { name: 'wird', label: 'nav.wird', icon: 'wird' },
   { name: 'quran', label: 'nav.quran', icon: 'quran' },
   { name: 'recite', label: 'nav.recite', icon: 'mic' },
   { name: 'revision', label: 'nav.revision', icon: 'revision' },
@@ -88,6 +93,8 @@ export interface ActiveSession {
   /** Completed plays per ayah in this session (playback evidence only). */
   readonly plays: Map<number, number>;
   ended: boolean;
+  /** Wird units this session plays (see App.wirdListen). */
+  readonly wird?: App['wirdListen'];
 }
 
 export class App {
@@ -96,9 +103,14 @@ export class App {
   readonly player: PlaybackController;
   prefs!: Preferences;
   quran!: QuranDataState;
-  data: { mistakes: Mistake[]; reviews: ReviewEvent[]; sessions: RevisionSession[]; plans: DailyPlan[] } = { mistakes: [], reviews: [], sessions: [], plans: [] };
+  data: { mistakes: Mistake[]; reviews: ReviewEvent[]; sessions: RevisionSession[]; plans: DailyPlan[]; wird: { plans: WirdPlan[]; tasks: WirdTask[] } } = { mistakes: [], reviews: [], sessions: [], plans: [], wird: { plans: [], tasks: [] } };
+  /** Wird units being listened to in the prepared/active session (offered as done when it ends). */
+  wirdListen: { readonly planId: string; readonly planName: string; readonly refs: readonly UnitRef[]; readonly label: string } | null = null;
+  /** After such a session: the one-tap "mark done?" prompt shown on the plan's card. */
+  wirdPrompt: { readonly planId: string; readonly refs: readonly UnitRef[]; readonly label: string } | null = null;
   route: { name: RouteName; params: URLSearchParams } = { name: 'dashboard', params: new URLSearchParams() };
   pending: SessionConfig | null = null;
+  private pendingWird: App['wirdListen'] = null;
   pendingTitle: Title | null = null;
   active: ActiveSession | null = null;
   test: ActiveTest | null = null;
@@ -137,6 +149,7 @@ export class App {
     this.recentReads = (await this.s.store.settings.get<AyahRef[]>(RECENT_KEY).catch(() => null)) ?? [];
     await this.reloadData();
     this.applyAppearance();
+    const migrated = await this.migratePeriodPlan().catch(() => null);
     this.buildShell(root);
     this.player.setRate(this.prefs.repeat.playbackRate);
     this.player.setPauseForAssessment(this.prefs.pauseForAssessment);
@@ -154,9 +167,28 @@ export class App {
     }
     window.addEventListener('hashchange', () => this.onRoute());
     this.onRoute();
+    if (migrated) this.toast(t('wird.plan.migrated', { name: migrated }));
     if (this.deps.enableReminders !== false) this.startReminderLoop();
   }
 
+  /** The retired week/month plan becomes a Wird plan once (its days and marks stay in history). */
+  private async migratePeriodPlan(): Promise<string | null> {
+    const period = this.prefs.periodPlan;
+    if (!period) return null;
+    const marker = `period:${period.start}`;
+    if (!this.data.wird.plans.some((p) => p.migratedFrom === marker)) {
+      const config = configFromPeriod(period, this.data.plans, this.quran.index, this.today());
+      if (config) {
+        const name = t('wird.plan.migratedName');
+        await this.s.wird.createPlan({ name, color: 0, startDate: this.today(), config }, marker);
+        await this.savePrefs({ ...this.prefs, periodPlan: null });
+        await this.reloadData();
+        return name;
+      }
+    }
+    await this.savePrefs({ ...this.prefs, periodPlan: null });
+    return null;
+  }
   private buildShell(root: HTMLElement) {
     this.nav = h('nav', { class: 'rail' });
     this.topbar = h('header', { class: 'topbar' });
@@ -245,8 +277,10 @@ export class App {
 
   async reloadData(): Promise<void> {
     const st = this.s.store;
-    const [mistakes, reviews, sessions, plans] = await Promise.all([this.s.mistakes.list(), st.reviews.getAll(), st.sessions.getAll(), st.plans.getAll()]);
-    this.data = { mistakes, reviews, sessions, plans };
+    // Wird tasks are generated up to today on every load (idempotent: nothing is duplicated).
+    await this.s.wird.refresh().catch(() => 0);
+    const [mistakes, reviews, sessions, plans, wird] = await Promise.all([this.s.mistakes.list(), st.reviews.getAll(), st.sessions.getAll(), st.plans.getAll(), this.s.wird.list()]);
+    this.data = { mistakes, reviews, sessions, plans, wird };
   }
 
   /** Reload persisted state and re-render, preserving scroll and keyboard focus. */
@@ -307,6 +341,8 @@ export class App {
     switch (this.route.name) {
       case 'dashboard':
         return dashboardView(this);
+      case 'wird':
+        return wirdView(this);
       case 'quran':
         return quranView(this);
       case 'recite':
@@ -411,6 +447,8 @@ export class App {
     this.pendingTitle = title ?? (() => scopeLabel(scope, this.quran.index));
     this.pending = config;
     this.active = null;
+    this.pendingWird = this.wirdListen;
+    this.wirdListen = null;
     this.navigate('#/session');
   }
 
@@ -449,7 +487,8 @@ export class App {
     });
     const scope = config.scope;
     const title = this.pendingTitle ?? (() => scopeLabel(scope, this.quran.index));
-    this.active = { id: session.id, config, built, title, outcomes: new Map(), plays: new Map(), ended: false };
+    this.active = { id: session.id, config, built, title, outcomes: new Map(), plays: new Map(), ended: false, wird: this.pendingWird };
+    this.pendingWird = null;
     this.pending = null;
     this.pendingTitle = null;
     this.player.setRate(config.repeat.playbackRate);
@@ -489,6 +528,11 @@ export class App {
       else await this.s.plans.abandonSession(a.id);
     }, completed ? t('ses.completedToast') : t('ses.endedToast'));
     a.ended = true;
+    if (a.wird) {
+      const w = a.wird;
+      this.wirdPrompt = { planId: w.planId, refs: w.refs, label: w.label };
+      this.toast(t('wird.listenPrompt', { range: w.label, plan: w.planName }), 'info', { label: t('wird.markDone'), key: 'wird-listen-toast', run: () => { this.wirdPrompt = null; void this.act(async () => { await this.s.wird.complete(w.refs); await this.refresh(); }, t('wird.allDoneToast')); } });
+    }
     await this.refresh();
   }
 

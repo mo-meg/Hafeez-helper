@@ -13,6 +13,13 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   your mistakes, answers and plans follow you to any device, while the app keeps working offline.
   Free hosting on GitHub Pages with a free Supabase project; see [docs/DEPLOY.md](docs/DEPLOY.md).
   Without Supabase settings the app runs local-only with no sign-in.
+* **Wird planner** (multi-plan revision planner): run several revision plans side by side
+  (e.g. Hizb 13–30 Sunday–Thursday with a Friday full revision, next to Hizb 1–10 with a Saturday
+  full revision), in juz, hizb or rub' units. Each plan has its own weekly schedule, rest and full
+  revision days, a balanced or hand-set daily workload (or a fixed amount per day), and its own
+  carry-over mode (Strict, Flexible, Priority). Unfinished units carry over to the next revision
+  day and are never silently dropped; tick units one by one for partial completion, rate quality
+  optionally, and follow the week view, statistics and history. See [docs/WIRD_PLANNER.md](docs/WIRD_PLANNER.md).
 * **Arabic and English interface** (Arabic by default, right-to-left; English left-to-right).
   Switch any time from the sidebar, the top bar on phones, or Settings; your choice is saved on
   the device. The Quran text is always shown exactly as supplied by the verified source.
@@ -161,6 +168,7 @@ docs/                   ADR, data sources, scoring, privacy, research, testing
 * [Publish for free: GitHub Pages + Supabase accounts](docs/DEPLOY.md)
 * [Quran data and audio: provenance, verification, licences](docs/DATA_SOURCES.md)
 * [Review policy, scheduler and quality score](docs/SCORING_AND_SCHEDULING.md)
+* [Wird planner: plans, carry-over and statistics](docs/WIRD_PLANNER.md)
 * [Privacy model](docs/PRIVACY.md)
 * [Testing](docs/TESTING.md)
 * [Reference project research](docs/RESEARCH.md)

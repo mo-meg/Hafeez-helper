@@ -110,7 +110,7 @@ describe('backup and restore', () => {
 
     const target = createMemoryStore();
     const res = await restoreBackup(target, parseBackup(backup), 'replace');
-    assert.deepEqual(res.summary, { mistakes: 1, reviews: 1, plans: 1, sessions: 0 });
+    assert.deepEqual(res.summary, { mistakes: 1, reviews: 1, plans: 1, sessions: 0, wirdPlans: 0 });
     assert.equal((await target.mistakes.getAll())[0]?.note, 'private note');
     assert.equal(res.preferences?.fontScale, 1.6);
   });
