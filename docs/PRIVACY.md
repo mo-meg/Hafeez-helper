@@ -23,9 +23,12 @@ The app has two modes, decided when it is built (see [DEPLOY.md](DEPLOY.md)):
   1. downloading the Quran text and metadata (AlQuran.cloud, or its official mirror), on request;
   2. streaming recitation audio from the selected host (the URL contains only the ayah number);
   3. testing an audio source, or saving audio for offline use, on request;
-  4. Recitation tracker only: short microphone chunks sent to the speech-recognition server on
-     the same computer (127.0.0.1 / localhost; other addresses are refused). Audio is kept in
-     memory only, never stored, logged or sent online.
+  4. Recitation tracker only: Quran Lab's SDK (TajweedFormer) checks the app's web key, downloads
+     the model once and its signed config, and sends anonymous daily usage totals and failure
+     reports (no audio, no text, no identifiers). Recognition runs in the browser; microphone audio
+     stays on the device and is never stored by this app. The SDK may ask the learner (its own
+     sheet, after a few takes) whether to share recordings; only after "Share" are takes uploaded
+     to Quran Lab (switch off / delete in the sheet).
   No request ever contains notes, mistakes or progress.
 * **Backups** are JSON files the user downloads and restores (merge or replace), validated
   with a schema before anything is written. Quran text and audio are not part of backups.

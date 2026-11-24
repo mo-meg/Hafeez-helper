@@ -31,8 +31,6 @@ export interface Alignment {
 
 export const MATCH_SIM = 0.84;
 export const NEAR_SIM = 0.6;
-/** Words the reciter commonly adds before a passage (isti'adha / basmala); cheap to ignore. */
-const PREAMBLE = new Set(['اعوذ', 'بالله', 'من', 'الشيطان', 'الرجيم', 'بسم', 'الله', 'الرحمن', 'الرحيم']);
 
 /**
  * Semi-global word alignment of recognised words against canonical words [from, to).
@@ -44,6 +42,8 @@ export function align(corpus: RecitationCorpus, hyp: readonly HypWord[], from: n
   const hi = Math.min(corpus.size, to);
   const m = hi - lo;
   const n = hyp.length;
+  // Words the reciter commonly adds before a passage (isti'adha / basmala) are cheap to ignore.
+  const PREAMBLE = corpus.preamble;
   const insCost = (i: number) => (PREAMBLE.has(hyp[i]?.norm ?? '') ? 0.35 : 1);
   const sims: number[][] = [];
   for (let i = 0; i < n; i++) {

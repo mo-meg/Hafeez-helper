@@ -32,8 +32,9 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   in the whole Quran, follows you word by word on the mushaf page, and flags different, skipped
   or repeated words and long pauses. A short confirmation window lets you correct yourself; words
   not heard clearly are never counted as mistakes. You choose which findings to save as mistakes.
-  Speech recognition runs on your own computer with the FastConformer Quran model
-  (`python scripts/asr_server.py`, model licence CC BY 4.0); audio is never stored or sent online. See
+  Speech recognition runs in the browser with Quran Lab's TajweedFormer
+  (`@quran-lab/tajweedformer` 4, loaded from Quran Lab; no server to run). It needs a free Quran Lab web key
+  (`HAFEEZ_QURANLAB_KEY`) and downloads the model once (~57 MB). See
   [docs/RECITATION.md](docs/RECITATION.md).
 * **Mistake marking**: tap a word, or an ayah number for the whole ayah. Choose a type (forgotten,
   hesitation, incorrect word, similar ayah, ayah ending, tajweed, other), severity, confidence,

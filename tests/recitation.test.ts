@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { search } from '../src/core/recitation/align.ts';
-import { Chunker, downsample, MODEL_RATE } from '../src/core/recitation/audio.ts';
-import { RecitationController, toHypWords, type RecitationState } from '../src/core/recitation/controller.ts';
-import { encodeWav, isLocalEndpoint, type AsrEngine, type AsrResult } from '../src/core/recitation/engine.ts';
+import { downsample, MODEL_RATE } from '../src/core/recitation/audio.ts';
+import { RecitationController, type RecitationState } from '../src/core/recitation/controller.ts';
+import { UnitSegmenter, type HeardUnit } from '../src/core/recitation/segment.ts';
+import { mapForms, type RecitationCorpus } from '../src/core/recitation/corpus.ts';
+import { unitKey, wordForms, type AyahUnits, type EngineTake, type HeardUpdate, type RecitationEngine, type TakeEndReason } from '../src/core/recitation/engine.ts';
+import { buildUnitCorpus } from '../src/core/recitation/unitCorpus.ts';
+import { toUpdate } from '../src/browser/tajweedEngine.ts';
 import { RecitationMistakeBridge } from '../src/core/recitation/mistakeBridge.ts';
 import { normWord, similarity } from '../src/core/recitation/normalize.ts';
 import { RecitationTracker, stripPreamble, type RecognisedChunk } from '../src/core/recitation/tracker.ts';
@@ -35,10 +39,11 @@ describe('normalisation (comparison only)', () => {
 describe('preamble', () => {
   it('ignores the isti\'adha and a basmala said before the passage', () => {
     const w = (t: string) => t.split(' ').map((raw) => ({ raw, norm: normWord(raw) }));
-    assert.deepEqual(stripPreamble(w('أعوذ بالله من الشيطان الرجيم كل الطعام')).map((x) => x.norm), ['كل', 'الطعام']);
-    assert.deepEqual(stripPreamble(w('أعوذ بالله')).length, 0, 'partial isti\'adha is held back');
-    assert.deepEqual(stripPreamble(w('بسم الله الرحمن الرحيم الم')).map((x) => x.norm), ['الم']);
-    assert.equal(stripPreamble(w('بسم الله الرحمن الرحيم')).length, 4, 'basmala alone is kept (Al-Fatihah 1:1)');
+    const C = { istiadha: ['اعوذ', 'بالله', 'من', 'الشيطان', 'الرجيم'], basmala: ['بسم', 'الله', 'الرحمن', 'الرحيم'] };
+    assert.deepEqual(stripPreamble(w('أعوذ بالله من الشيطان الرجيم كل الطعام'), C).map((x) => x.norm), ['كل', 'الطعام']);
+    assert.deepEqual(stripPreamble(w('أعوذ بالله'), C).length, 0, 'partial isti\'adha is held back');
+    assert.deepEqual(stripPreamble(w('بسم الله الرحمن الرحيم الم'), C).map((x) => x.norm), ['الم']);
+    assert.equal(stripPreamble(w('بسم الله الرحمن الرحيم'), C).length, 4, 'basmala alone is kept (Al-Fatihah 1:1)');
   });
 });
 
@@ -195,152 +200,231 @@ describe('stage B: focused tracking', () => {
 });
 
 describe('audio input', () => {
-  const tone = (ms: number, amp: number) => Float32Array.from({ length: (MODEL_RATE * ms) / 1000 }, (_, i) => amp * Math.sin(i / 3));
-
   it('downsamples 48 kHz to 16 kHz', () => {
     assert.equal(downsample(new Float32Array(48000), 48000).length, 16000);
     assert.throws(() => downsample(new Float32Array(10), 8000));
   });
+});
 
-  it('chunks speech at pauses, drops silence and never duplicates samples', () => {
-    const c = new Chunker();
-    const out = [...c.push(tone(1000, 0)), ...c.push(tone(1500, 0.3)), ...c.push(tone(800, 0)), ...c.push(tone(1200, 0.3)), ...c.flush()];
-    assert.equal(out.length, 2);
-    assert.ok((out[0]?.silenceBeforeMs ?? 0) >= 900);
-    const total = out.reduce((n, ch) => n + ch.pcm.length, 0);
-    assert.ok(total <= MODEL_RATE * 2.8);
-    assert.ok((out[1]?.startMs ?? 0) >= (out[0]?.endMs ?? 0));
+// ---------------------------------------------------------------- the model's sound units
+// Fake units for the synthetic text: one unit per letter (code point − 0x600), word bar = 1.
+const BAR = 1;
+const SEPS = new Set([0, BAR]);
+const unitsOfWord = (plain: string) => [...plain].map((c) => (c.codePointAt(0) as number) - 0x600);
+function fakeAyahUnits(surah: number, ayah: number): AyahUnits {
+  const words = recitationCorpus().text.ayah({ surah, ayah }).tokens.filter((t) => t.position !== null).map((t) => normWord(t.text));
+  const units: number[] = [];
+  const idx: number[] = [];
+  words.forEach((w, k) => {
+    if (k) {
+      units.push(BAR);
+      idx.push(k);
+    }
+    for (const u of unitsOfWord(w)) {
+      units.push(u);
+      idx.push(k + 1);
+    }
+  });
+  return { units, words: idx, wordCount: words.length };
+}
+
+interface FakeTake extends EngineTake {
+  pushed: number;
+  finished: boolean;
+  update(u: Partial<HeardUpdate> & { units: HeardUnit[] }): void;
+  end(reason: TakeEndReason, e?: unknown): void;
+}
+function fakeEngine(opts: { loadError?: Error } = {}): RecitationEngine & { takes: FakeTake[] } {
+  const takes: FakeTake[] = [];
+  return {
+    name: 'fake',
+    separators: SEPS,
+    takes,
+    async load(onProgress) {
+      onProgress?.({ bytesDone: 10, bytesTotal: 20 });
+      if (opts.loadError) throw opts.loadError;
+    },
+    async ayahUnits(s, a) {
+      return fakeAyahUnits(s, a);
+    },
+    start(onUpdate, onEnd) {
+      let last: HeardUpdate = { units: [], settledUnits: 0, final: false, text: '', speech: false };
+      const tk: FakeTake = {
+        pushed: 0,
+        finished: false,
+        push(pcm) {
+          tk.pushed += pcm.length;
+        },
+        async finish() {
+          tk.finished = true;
+          onUpdate({ ...last, final: true });
+        },
+        async cancel() {},
+        update(u) {
+          last = { settledUnits: u.units.length, final: false, text: u.units.map((x) => x.name).join(' '), speech: true, ...u };
+          onUpdate(last);
+        },
+        end: (reason, e) => onEnd(reason, e),
+      };
+      takes.push(tk);
+      return tk;
+    },
+  };
+}
+
+let unitCorpusCache: RecitationCorpus | null = null;
+async function unitCorpus(): Promise<RecitationCorpus> {
+  const { text, index } = recitationCorpus();
+  unitCorpusCache ??= await buildUnitCorpus(text, index, fakeEngine());
+  return unitCorpusCache;
+}
+/** What a perfect model hears for canonical words [from, from+count): one flat unit stream, no word bars (as measured), 100 ms per unit. */
+function heard(from: number, count: number, atMs = 0): HeardUnit[] {
+  const ids = recitationCorpus().corpus.words.slice(from, from + count).flatMap((w) => unitsOfWord(w.plain));
+  return ids.map((id, k) => ({ id, name: `u${id}`, startMs: atMs + k * 100, endMs: atMs + k * 100 + 80, confidence: 0.9 }));
+}
+const unitsPer = 4; // synthetic words have 4 letters
+const silence = (ms: number) => new Float32Array((MODEL_RATE * ms) / 1000);
+
+describe('sound-unit comparison text (model reference table)', () => {
+  it('splits an ayah\'s expected units into words and keeps the canonical words', async () => {
+    const forms = wordForms({ units: [5, 6, BAR, 7, BAR, 8, 9], words: [1, 1, 1, 2, 2, 3, 3], wordCount: 3 }, SEPS);
+    assert.deepEqual(forms, [unitKey([5, 6]), unitKey([7]), unitKey([8, 9])]);
+    const uc = await unitCorpus();
+    const ac = recitationCorpus().corpus;
+    assert.equal(uc.kind, 'units');
+    assert.equal(uc.size, ac.size);
+    assert.equal(uc.words[100]?.text, ac.words[100]?.text);
+    assert.equal(uc.words[100]?.norm, unitKey(unitsOfWord(ac.words[100]?.plain ?? '')));
+    assert.deepEqual(uc.mismatchedAyat, []);
   });
 
-  it('cuts long continuous recitation at the max chunk length', () => {
-    const c = new Chunker({ maxChunkMs: 2000 });
-    const out = c.push(tone(5000, 0.3));
-    assert.ok(out.length >= 2);
-    assert.ok(out.every((ch) => ch.endMs - ch.startMs <= 2000));
+  it('spreads forms when the model counts words differently', () => {
+    assert.deepEqual(mapForms(['a', 'b', 'c'], 2), ['ab', 'c']);
+    assert.deepEqual(mapForms(['a'], 3), ['a', 'a', 'a']);
+    assert.deepEqual(mapForms(['a', 'b'], 2), ['a', 'b']);
   });
 
-  it('closes an utterance with a final chunk even when silence follows a length cut', () => {
-    const c = new Chunker({ maxChunkMs: 2000 });
-    // fading speech: the quietest frame (where the length cut happens) is the very last one
-    const fading = Float32Array.from({ length: MODEL_RATE * 2 }, (_, i) => (0.3 - (0.2 * i) / (MODEL_RATE * 2)) * Math.sin(i / 3));
-    const out = [...c.push(fading), ...c.push(tone(1000, 0))];
-    assert.deepEqual(out.map((ch) => ch.final), [false, true]);
-    assert.equal(out[1]?.pcm.length, 0);
+  it('finds a passage from sound units without any selection', async () => {
+    const uc = await unitCorpus();
+    const t = new RecitationTracker(uc);
+    const from = flatOf(18, 10);
+    // a little noise first (e.g. a breath heard as sounds), then 8 words without any word bar
+    const noise: HeardUnit[] = [3, 4].map((id) => ({ id, name: 'n', startMs: 0, endMs: 50, confidence: 0.5 }));
+    const r = new UnitSegmenter(uc).segment([...noise, ...heard(from, 8, 200)], null, true);
+    assert.equal(r.words.length, 8, 'cut at the canonical word boundaries');
+    assert.deepEqual(r.words.map((w) => w.norm), uc.words.slice(from, from + 8).map((w) => w.norm));
+    t.push({ words: r.words, startMs: 0, endMs: 5000, silenceBeforeMs: 0 });
+    assert.equal(t.snapshot().mode, 'focused');
+    assert.equal(t.cursor, from + 8);
   });
 
-  it('keeps soft speech after a reverberant quiet passage (noise floor is capped)', () => {
-    const c = new Chunker();
-    const out = [...c.push(tone(3000, 0.04)), ...c.push(tone(2000, 0.035)), ...c.flush()];
-    assert.ok(out.reduce((n, ch) => n + ch.pcm.length, 0) >= MODEL_RATE * 4.5);
+  it('waits for more sounds when a passage occurs in two places', async () => {
+    const uc = await unitCorpus();
+    const seg = new UnitSegmenter(uc);
+    const twin = flatOf(3, 5);
+    assert.equal(seg.segment(heard(twin, 6), null, false).words.length, 0, '3:5 = 40:5 in the fixture');
   });
 
-  it('encodes WAV and only accepts loopback endpoints', () => {
-    const wav = encodeWav(new Float32Array(160));
-    assert.equal(wav.length, 44 + 320);
-    assert.equal(String.fromCharCode(...wav.slice(0, 4)), 'RIFF');
-    assert.ok(isLocalEndpoint('http://127.0.0.1:8765/transcribe'));
-    assert.ok(isLocalEndpoint('http://localhost:8765'));
-    assert.ok(!isLocalEndpoint('https://api.example.com/asr'));
+  it('keeps a wrong word visible to the tracker (substitution inside the word)', async () => {
+    const uc = await unitCorpus();
+    const from = flatOf(10, 20);
+    const units = heard(from, 10).map((u, k) => (k >= 5 * unitsPer && k < 6 * unitsPer ? { ...u, id: 2 } : u));
+    const r = new UnitSegmenter(uc).segment(units, null, true);
+    const t = new RecitationTracker(uc);
+    t.push({ words: r.words, startMs: 0, endMs: 4000, silenceBeforeMs: 0 });
+    t.finish();
+    assert.deepEqual(t.snapshot().findings.map((f) => [f.kind, f.flat]), [['incorrect', from + 5]]);
   });
 
-  it('uses model word timestamps only when provided', () => {
-    const withTs = toHypWords({ text: 'a b', words: [{ word: 'كتب', start: 0.5, end: 0.9 }] }, 1000);
-    assert.equal(withTs[0]?.startMs, 1500);
-    const plain = toHypWords({ text: 'كتب قلم' }, 1000);
-    assert.equal(plain.length, 2);
-    assert.equal(plain[0]?.startMs, undefined);
+  it('maps the SDK decoded layer to a flat unit stream: word bar dropped, settled count kept', () => {
+    const tok = (id: number, ms: number) => ({ id, name: String(id), firstMs: ms, peakMs: ms, lastMs: ms, confidence: 0.8 });
+    const w1 = [tok(5, 0), tok(6, 40)];
+    const w2 = [tok(7, 400)];
+    const decoded = {
+      text: 'ab c', settled: 3, isFinal: false, frames: [],
+      tokens: [...w1, tok(BAR, 200), ...w2],
+      words: [{ index: 0, text: 'ab', tokens: w1, firstMs: 0, lastMs: 40, confidence: 0.8 }, { index: 1, text: 'c', tokens: w2, firstMs: 400, lastMs: 400, confidence: 0.8 }],
+    };
+    const u = toUpdate(decoded, true, SEPS);
+    assert.deepEqual(u.units.map((x) => x.id), [5, 6, 7]);
+    assert.equal(u.settledUnits, 2);
+    assert.equal(u.units[1]?.endMs, 80);
   });
 });
 
-describe('controller with a mocked model', () => {
-  const tone = (ms: number, amp: number) => Float32Array.from({ length: (MODEL_RATE * ms) / 1000 }, (_, i) => amp * Math.sin(i / 3));
-  function mock(script: Array<AsrResult | Error>, load?: Error): AsrEngine & { calls: number } {
-    return {
-      name: 'mock',
-      calls: 0,
-      async load() {
-        if (load) throw load;
-      },
-      async transcribe() {
-        const r = script[this.calls++ % script.length] as AsrResult | Error;
-        if (r instanceof Error) throw r;
-        return r;
-      },
-    };
-  }
-  const text = (words: HypWord[]) => ({ text: words.map((w) => w.raw).join(' ') });
+describe('controller with a fake streaming model', () => {
   const base = () => flatOf(9, 30);
 
-  it('recognises recorded speech chunks and keeps results after a microphone failure', async () => {
-    const engine = mock([text(flatWords(base(), 6)), text(flatWords(base() + 6, 4))]);
+  it('hands settled words to the tracker once and the last word at the end of the take', async () => {
+    const engine = fakeEngine();
     const states: RecitationState[] = [];
-    const c = new RecitationController({ engine, tracker: tracker(), onUpdate: (s) => states.push(s) });
+    const c = new RecitationController({ engine, tracker: new RecitationTracker(await unitCorpus()), onUpdate: (s) => states.push(s) });
     assert.equal(await c.start(), true);
-    c.feed(tone(1200, 0.3));
-    c.feed(tone(600, 0));
-    c.feed(tone(1200, 0.3));
-    await c.interrupt(new Error('device unplugged'));
-    const s = c.state();
-    assert.equal(s.status, 'error');
-    assert.equal(s.error?.kind, 'microphone');
-    assert.equal(s.tracker.cursor, base() + 10);
-    assert.ok(states.some((x) => x.status === 'listening'));
+    assert.ok(states.some((s) => s.progress?.bytesTotal === 20), 'download progress is reported');
+    c.feed(silence(1000));
+    const tk = engine.takes[0] as FakeTake;
+    assert.equal(tk.pushed, MODEL_RATE);
+    tk.update({ units: heard(base(), 6) });
+    assert.equal(c.state().tracker.cursor, base() + 5, 'the last word can still grow');
+    tk.update({ units: heard(base(), 10), settledUnits: 6 * unitsPer });
+    assert.ok((c.state().tracker.cursor ?? 0) <= base() + 6, 'unsettled words are not handed over');
+    assert.equal(c.state().silent, false);
+    assert.ok(c.state().heard.length > 0);
+    await c.stop();
+    assert.equal(tk.finished, true);
+    assert.equal(c.state().status, 'stopped');
+    assert.equal(c.state().tracker.cursor, base() + 10);
+    assert.equal(c.state().tracker.findings.length, 0, 'nothing counted twice');
   });
 
   it('reports model loading errors', async () => {
-    const c = new RecitationController({ engine: mock([], new Error('server not running')), tracker: tracker(), onUpdate: () => {} });
+    const c = new RecitationController({ engine: fakeEngine({ loadError: new Error('needs_connection') }), tracker: new RecitationTracker(await unitCorpus()), onUpdate: () => {} });
     assert.equal(await c.start(), false);
-    assert.deepEqual(c.state().error, { kind: 'model', detail: 'server not running' });
+    assert.deepEqual(c.state().error, { kind: 'model', detail: 'needs_connection' });
   });
 
-  it('survives a transient engine error and stops after repeated failures', async () => {
-    const ok = mock([new Error('blip'), text(flatWords(base(), 6))]);
-    const c = new RecitationController({ engine: ok, tracker: tracker(), onUpdate: () => {} });
+  it('continues in a new take when the engine ends one, and stops on an engine error', async () => {
+    const engine = fakeEngine();
+    const c = new RecitationController({ engine, tracker: new RecitationTracker(await unitCorpus()), onUpdate: () => {} });
     await c.start();
-    for (let i = 0; i < 2; i++) {
-      c.feed(tone(1200, 0.3));
-      c.feed(tone(600, 0));
-    }
-    await c.stop();
-    assert.equal(c.state().status, 'stopped');
-    assert.equal(c.state().tracker.mode, 'focused');
-    const bad = new RecitationController({ engine: mock([new Error('crash')]), tracker: tracker(), onUpdate: () => {} });
-    await bad.start();
-    for (let i = 0; i < 4; i++) {
-      bad.feed(tone(1200, 0.3));
-      bad.feed(tone(600, 0));
-    }
-    await bad.stop();
-    assert.equal(bad.state().error?.kind, 'engine');
+    c.feed(silence(2000));
+    (engine.takes[0] as FakeTake).update({ units: heard(base(), 6) });
+    (engine.takes[0] as FakeTake).end('ended');
+    assert.equal(engine.takes.length, 2);
+    (engine.takes[1] as FakeTake).update({ units: heard(base() + 6, 4) });
+    assert.equal(c.state().tracker.cursor, base() + 9);
+    (engine.takes[1] as FakeTake).end('error', new Error('engine_failed'));
+    assert.equal(c.state().error?.kind, 'engine');
+    c.feed(silence(500));
+    assert.equal((engine.takes[1] as FakeTake).pushed, 0, 'no audio after the failure');
   });
 
-  it('pause ignores audio, resume continues, and the last transcript is exposed for display', async () => {
-    const engine = mock([text(flatWords(base(), 6))]);
-    const c = new RecitationController({ engine, tracker: tracker(), onUpdate: () => {} });
+  it('keeps results after a microphone failure', async () => {
+    const engine = fakeEngine();
+    const c = new RecitationController({ engine, tracker: new RecitationTracker(await unitCorpus()), onUpdate: () => {} });
     await c.start();
-    c.feed(tone(1200, 0.3));
+    (engine.takes[0] as FakeTake).update({ units: heard(base(), 6) });
+    await c.interrupt(new Error('device unplugged'));
+    assert.equal(c.state().error?.kind, 'microphone');
+    assert.equal(c.state().tracker.cursor, base() + 6);
+  });
+
+  it('pause closes the take and ignores audio; resume opens a new take', async () => {
+    const engine = fakeEngine();
+    const c = new RecitationController({ engine, tracker: new RecitationTracker(await unitCorpus()), onUpdate: () => {} });
+    await c.start();
     c.pause();
     await c.idle();
-    const calls = engine.calls;
-    c.feed(tone(3000, 0.3));
-    await c.idle();
-    assert.equal(engine.calls, calls, 'no recognition while paused');
+    assert.equal((engine.takes[0] as FakeTake).finished, true);
+    c.feed(silence(3000));
+    assert.equal((engine.takes[0] as FakeTake).pushed, 0);
     assert.equal(c.state().paused, true);
     c.resume();
-    assert.equal(c.state().paused, false);
-    assert.ok(c.state().heard.length > 0);
-    assert.ok((c.state().latencyMs ?? -1) >= 0);
+    assert.equal(engine.takes.length, 2);
+    c.feed(silence(100));
+    assert.equal((engine.takes[1] as FakeTake).pushed, MODEL_RATE / 10);
     await c.stop();
-  });
-
-  it('silence produces no recognition calls', async () => {
-    const engine = mock([text([])]);
-    const c = new RecitationController({ engine, tracker: tracker(), onUpdate: () => {} });
-    await c.start();
-    c.feed(tone(3000, 0.001));
-    await c.stop();
-    assert.equal(engine.calls, 0);
-    assert.equal(c.state().silent, true);
   });
 });
 

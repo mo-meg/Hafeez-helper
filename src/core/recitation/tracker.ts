@@ -1,5 +1,6 @@
 import type { AyahRef } from '../quran/types.ts';
-import { align, search, type Alignment, type HypWord } from './align.ts';
+import { align, MATCH_SIM, search, type Alignment, type HypWord } from './align.ts';
+import { similarity } from './normalize.ts';
 import type { RecitationCorpus } from './corpus.ts';
 
 export type WordStatus = 'correct' | 'incorrect' | 'skipped' | 'repeated' | 'uncertain' | 'hesitation' | 'pending';
@@ -49,19 +50,20 @@ export interface TrackerConfig {
   readonly maxSkipWords: number;
 }
 
-const ISTIADHA = ['اعوذ', 'بالله', 'من', 'الشيطان', 'الرجيم'];
-const BASMALA = ['بسم', 'الله', 'الرحمن', 'الرحيم'];
-
 /**
  * Removes a leading isti'adha / basmala said before reciting (measured on a real recording:
  * «أعوذ بالله من الشيطان الرجيم» otherwise locks onto An-Nahl 16:98). A basmala is kept while
  * nothing follows it, so Al-Fatihah 1:1 can still be found once the next words arrive.
  */
-export function stripPreamble(words: readonly HypWord[]): HypWord[] {
+export function stripPreamble(words: readonly HypWord[], corpus: Pick<RecitationCorpus, 'istiadha' | 'basmala'>): HypWord[] {
   let out = [...words];
+  const ISTIADHA = corpus.istiadha;
+  const BASMALA = corpus.basmala;
+  // Sound units of a phrase vary a little with the joins between words, so a close match counts.
+  const same = (a: string | undefined, b: string | undefined) => !!a && !!b && (a === b || similarity(a, b) >= MATCH_SIM);
   const starts = (seq: readonly string[], minLen: number) => {
     let n = 0;
-    while (n < seq.length && n < out.length && out[n]?.norm === seq[n]) n++;
+    while (n < seq.length && n < out.length && same(out[n]?.norm, seq[n])) n++;
     return n >= minLen || (n === out.length && n > 0 && n < seq.length) ? n : 0;
   };
   const a = starts(ISTIADHA, 3);
@@ -86,8 +88,6 @@ interface Pending {
   readonly kind: 'incorrect' | 'skipped';
   readonly atMs: number;
   readonly heard: string | null;
-  /** A second, longer-context recognition still saw a mistake here. */
-  readonly verified?: boolean;
 }
 
 export interface TrackerSnapshot {
@@ -177,7 +177,7 @@ export class RecitationTracker {
 
   // ------------------------------------------------------------------ stage A
   private searchStep(chunk: RecognisedChunk): void {
-    this.buffer = stripPreamble([...this.buffer, ...chunk.words]);
+    this.buffer = stripPreamble([...this.buffer, ...chunk.words], this.corpus);
     if (this.buffer.length > this.config.searchWords) this.buffer = this.buffer.slice(-this.config.searchWords);
     let res = null;
     if (this.lastKnown !== null) {
@@ -310,7 +310,7 @@ export class RecitationTracker {
           this.pending.delete(o.ref);
           this.status.set(o.ref, 'uncertain');
         }
-      } else if (prior === undefined || prior === 'uncertain') this.suspect(o.ref, 'incorrect', w?.norm ?? null, t);
+      } else if (prior === undefined || prior === 'uncertain') this.suspect(o.ref, 'incorrect', w?.raw || w?.norm || null, t);
     }
   }
 
@@ -344,37 +344,6 @@ export class RecitationTracker {
     return -1;
   }
 
-  /**
-   * When true, a suspected mistake is confirmed only after `verify` (a second recognition of a
-   * longer stretch of audio around it) still disagrees with the text.
-   */
-  verifier = false;
-
-  /** Suspected mistakes awaiting a second look. */
-  suspects(): { flat: number; atMs: number }[] {
-    // Only suspected omissions get a second look: words swallowed by the recogniser are its typical
-    // failure. A clearly different word is kept as evidence — measured: with longer context the
-    // Quran-trained model tends to "hear" the canonical word and would hide real substitutions.
-    return [...this.pending].filter(([, p]) => !p.verified && p.kind === 'skipped').map(([flat, p]) => ({ flat, atMs: p.atMs }));
-  }
-
-  /**
-   * Second look at a suspected mistake with words recognised from a longer audio window. If they
-   * contain the canonical word, the first recognition was wrong: the word becomes "not clearly
-   * heard" (never a mistake). Measured on a real recording, this removes most false alarms.
-   */
-  verify(flat: number, hyp: readonly HypWord[]): void {
-    const p = this.pending.get(flat);
-    if (!p) return;
-    const a = align(this.corpus, hyp, flat - 12, flat + 12, true);
-    const hit = a.ops.some((o) => (o.op === 'match' || o.op === 'near') && o.ref === flat);
-    if (hit) {
-      this.pending.delete(flat);
-      this.status.set(flat, 'uncertain');
-    } else this.pending.set(flat, { ...p, verified: true });
-    this.confirmDue(false);
-  }
-
   private suspect(flat: number, kind: Pending['kind'], heard: string | null, atMs: number): void {
     this.status.set(flat, 'pending');
     this.pending.set(flat, { kind, heard, atMs });
@@ -396,8 +365,7 @@ export class RecitationTracker {
   private confirmDue(all: boolean): void {
     const cursor = this.cursor ?? 0;
     for (const [flat, p] of [...this.pending]) {
-      const waiting = this.verifier && !p.verified && p.kind === 'skipped';
-      const due = all || (!waiting && this.nowMs - p.atMs >= this.config.confirmMs && cursor >= flat + 1 + this.config.confirmWords);
+      const due = all || (this.nowMs - p.atMs >= this.config.confirmMs && cursor >= flat + 1 + this.config.confirmWords);
       if (!due) continue;
       this.pending.delete(flat);
       this.status.set(flat, p.kind);
