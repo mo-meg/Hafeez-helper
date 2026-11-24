@@ -1,36 +1,34 @@
-import { DEFAULT_ASR_ENDPOINT, LocalAsrEngine } from '../../browser/localAsrEngine.ts';
 import { MicError, startMicrophone, type MicSession } from '../../browser/micCapture.ts';
+import { engineErrorText, TajweedFormerEngine } from '../../browser/tajweedEngine.ts';
 import { RecitationController, type RecitationState } from '../../core/recitation/controller.ts';
 import { RecitationCorpus } from '../../core/recitation/corpus.ts';
-import type { AccessRequest, AccessStatus } from '../../core/recitation/access.ts';
-import { isLocalEndpoint } from '../../core/recitation/engine.ts';
 import { categoryFor, DEFAULT_SAVE_KINDS, RecitationMistakeBridge } from '../../core/recitation/mistakeBridge.ts';
 import { RecitationTracker, type Finding, type WordStatus } from '../../core/recitation/tracker.ts';
+import { buildUnitCorpus } from '../../core/recitation/unitCorpus.ts';
 import { fromIndex } from '../../core/quran/refs.ts';
 import type { App } from '../app.ts';
+import { icon } from '../components/icons.ts';
 import { arabicDigits, h, replaceChildren, type Child } from '../dom.ts';
 import { fmtNum, t, type MessageKey } from '../i18n/index.ts';
 import { categoryLabel, errorText, refLabel, surahName } from '../i18n/labels.ts';
 
-const ENDPOINT_KEY = 'recitation.endpoint';
-
 /** Live recitation state kept outside renders (the view may re-render at any time). */
 interface Live {
+  /** Canonical words for display (Arabic comparison forms). */
   corpus: RecitationCorpus;
+  /** Same words with the model's sound units as comparison forms (built once, after the model loads). */
+  unitCorpus: RecitationCorpus | null;
+  engine: TajweedFormerEngine;
   controller: RecitationController | null;
   mic: MicSession | null;
   state: RecitationState | null;
+  /** Shown while the model downloads / the comparison text is prepared, before a controller exists. */
+  preparing: string | null;
   bridge: RecitationMistakeBridge | null;
   selected: Set<string>;
-  endpoint: string;
   host: HTMLElement | null;
   /** Memorisation mode: words not yet recited are hidden. */
   hide: boolean;
-  /** Access to the shared online server (only meaningful when that server is the chosen engine). */
-  access: AccessStatus | 'loading' | 'error';
-  accessLoaded: boolean;
-  /** Admin only: everybody who asked for access. */
-  requests: AccessRequest[] | null;
 }
 let live: Live | null = null;
 
@@ -38,72 +36,9 @@ function ensureLive(app: App): Live | null {
   const text = app.quran.text;
   if (!text) return null;
   if (!live || live.corpus.edition !== text.edition) {
-    live = { corpus: new RecitationCorpus(text, app.quran.index), controller: null, mic: null, state: null, bridge: null, selected: new Set(), endpoint: sharedUrl(app) || DEFAULT_ASR_ENDPOINT, host: null, hide: false, access: 'loading', accessLoaded: false, requests: null };
-    void app.s.store.settings.get<string>(ENDPOINT_KEY).then((v) => {
-      if (live && v && (isLocalEndpoint(v) || sameUrl(v, sharedUrl(app)))) live.endpoint = v;
-      if (live) void refreshAccess(app, live);
-    });
+    live = { corpus: new RecitationCorpus(text, app.quran.index), unitCorpus: null, engine: live?.engine ?? new TajweedFormerEngine(app.deps.quranLabKey ?? ''), controller: null, mic: null, state: null, preparing: null, bridge: null, selected: new Set(), host: null, hide: false };
   }
   return live;
-}
-
-const trimUrl = (u: string) => u.trim().replace(/\/+$/, '');
-const sameUrl = (a: string, b: string) => !!b && trimUrl(a) === trimUrl(b);
-/** The shared server is offered only to signed-in users of a build that has its address. */
-function sharedUrl(app: App): string {
-  return app.deps.account && app.deps.asrUrl ? trimUrl(app.deps.asrUrl) : '';
-}
-const usesShared = (app: App, l: Live) => sameUrl(l.endpoint, sharedUrl(app));
-
-async function refreshAccess(app: App, l: Live): Promise<void> {
-  const acc = app.deps.account?.recitationAccess;
-  if (!acc || !usesShared(app, l)) return;
-  l.access = 'loading';
-  try {
-    l.access = await acc.myStatus();
-    l.requests = acc.isAdmin ? await acc.list() : null;
-    l.accessLoaded = true;
-  } catch {
-    l.access = 'error';
-  }
-  paint(app, l);
-}
-
-async function accessAction(app: App, l: Live, fn: () => Promise<void>): Promise<void> {
-  try {
-    await fn();
-  } catch (e) {
-    app.toast(errorText(e), 'error');
-  }
-  await refreshAccess(app, l);
-}
-
-function accessPanel(app: App, l: Live): Node | null {
-  const acc = app.deps.account?.recitationAccess;
-  if (!acc || !usesShared(app, l)) return null;
-  const mine: Child[] = [];
-  if (l.access === 'loading') mine.push(h('p', { class: 'muted' }, t('rec.access.loading')));
-  else if (l.access === 'error') mine.push(h('p', { class: 'notice warn' }, t('rec.access.error')), h('button', { type: 'button', onclick: () => void refreshAccess(app, l) }, t('rec.access.retry')));
-  else if (l.access === 'none') mine.push(h('p', null, t('rec.access.none')), h('button', { type: 'button', class: 'primary', 'data-key': 'rec-request', onclick: () => void accessAction(app, l, () => acc.request()) }, t('rec.access.request')));
-  else if (l.access === 'pending') mine.push(h('p', { class: 'notice' }, t('rec.access.pending')), h('button', { type: 'button', onclick: () => void refreshAccess(app, l) }, t('rec.access.check')));
-  else if (l.access === 'denied') mine.push(h('p', { class: 'notice warn' }, t('rec.access.denied')));
-  const admin = acc.isAdmin ? adminList(app, l, acc) : null;
-  return h('div', { class: 'panel' }, l.access === 'approved' ? null : h('h2', null, t('rec.access.title')), ...mine, admin);
-}
-
-function adminList(app: App, l: Live, acc: NonNullable<App['deps']['account']>['recitationAccess']): HTMLElement {
-  const rows = l.requests ?? [];
-  const btn = (r: AccessRequest, to: 'approved' | 'denied' | 'pending', label: MessageKey) =>
-    h('button', { type: 'button', 'data-key': `rec-${to}`, onclick: () => void accessAction(app, l, () => acc.decide(r.userId, to, app.now())) }, t(label));
-  return h('details', { class: 'rec-admin', open: rows.some((r) => r.status === 'pending') },
-    h('summary', null, t('rec.access.admin'), ` (${fmtNum(rows.filter((r) => r.status === 'pending').length)})`),
-    rows.length === 0 ? h('p', { class: 'muted' }, t('rec.access.noRequests')) : null,
-    ...rows.map((r) => h('div', { class: 'row' },
-      h('span', { dir: 'ltr' }, r.email || r.userId),
-      h('span', { class: 'muted' }, t(`rec.access.s.${r.status}` as MessageKey)),
-      r.status !== 'approved' ? btn(r, 'approved', 'rec.access.approve') : null,
-      r.status === 'pending' ? btn(r, 'denied', 'rec.access.deny') : null,
-      r.status === 'approved' ? btn(r, 'denied', 'rec.access.revoke') : null)));
 }
 
 export function reciteView(app: App): Node {
@@ -118,63 +53,92 @@ export function reciteView(app: App): Node {
 function paint(app: App, l: Live): void {
   if (!l.host) return;
   const st = l.state;
-  replaceChildren(l.host, accessPanel(app, l), controls(app, l, st), st ? locationBar(l, st) : null, st ? textPanel(l, st) : null, legend(), st && (st.status === 'stopped' || st.status === 'error') ? summary(app, l, st) : null, engineSettings(app, l));
+  const noKey = !app.deps.quranLabKey ? h('p', { class: 'notice warn' }, t('rec.noKey')) : null;
+  const text = st ? textPanel(l, st) : null;
+  replaceChildren(l.host, noKey, controls(app, l, st), text ?? emptyStage(), text ? legend() : null, st && (st.status === 'stopped' || st.status === 'error') ? summary(app, l, st) : null);
+}
+
+/** Placeholder for the mushaf area before the first words are located. */
+function emptyStage(): HTMLElement {
+  return h('div', { class: 'rec-empty' }, h('span', { class: 'rec-empty-icon' }, icon('mic')), h('p', null, t('rec.reciteAnywhere')));
 }
 
 // ------------------------------------------------------------------ controls
-function statusText(st: RecitationState | null): string {
+function statusText(l: Live, st: RecitationState | null): string {
+  if (l.preparing) return l.preparing;
   if (!st) return t('rec.status.idle');
   if (st.status === 'error' && st.error) return t(`rec.err.${st.error.kind}` as MessageKey, { detail: st.error.detail });
+  if (st.status === 'loading' && st.progress && st.progress.bytesTotal > 0 && st.progress.bytesDone < st.progress.bytesTotal) return progressText(st.progress.bytesDone, st.progress.bytesTotal);
   if (st.status === 'listening' && st.paused) return t('rec.status.paused');
   if (st.status === 'listening') return st.silent ? t('rec.status.waiting') : t('rec.status.listening');
   return t(`rec.status.${st.status}` as MessageKey);
 }
 
+const mb = (b: number) => fmtNum(Math.round(b / 1e5) / 10);
+const progressText = (done: number, total: number) => t('rec.loadingProgress', { done: mb(done), total: mb(total) });
+
 function controls(app: App, l: Live, st: RecitationState | null): HTMLElement {
-  const blocked = usesShared(app, l) && l.access !== 'approved';
-  const active = st?.status === 'listening' || st?.status === 'loading' || st?.status === 'stopping';
-  return h(
-    'div',
-    { class: 'panel rec-controls' },
-    h('div', { class: 'row' },
-      active
-        ? h('button', { type: 'button', class: 'primary', 'data-key': 'rec-stop', disabled: st?.status === 'stopping', onclick: () => void stop(app, l) }, t('rec.stop'))
-        : h('button', { type: 'button', class: 'primary', 'data-key': 'rec-start', disabled: blocked, onclick: () => void start(app, l) }, t('rec.start')),
-      h('span', { class: `rec-dot ${st?.status === 'listening' ? (st.silent ? 'idle' : 'on') : ''}`, 'aria-hidden': 'true' }),
-      h('span', { role: 'status', 'aria-live': 'polite', class: st?.status === 'error' ? 'rec-error' : '' }, statusText(st)),
-      st?.status === 'listening'
-        ? h('button', { type: 'button', 'data-key': 'rec-pause', 'aria-pressed': String(st.paused), onclick: () => (st.paused ? l.controller?.resume() : l.controller?.pause()) }, st.paused ? t('rec.resume') : t('rec.pause'))
-        : null,
-      h('button', { type: 'button', 'data-key': 'rec-hide', 'aria-pressed': String(l.hide), onclick: () => { l.hide = !l.hide; paint(app, l); } }, l.hide ? t('rec.show') : t('rec.hide')),
-      st && st.backlog > 1 ? h('span', { class: 'muted' }, t('rec.backlog')) : null,
-    ),
-    st?.heard
-      ? h('p', { class: 'rec-heard', 'aria-live': 'off' },
-        h('span', { class: 'muted' }, t('rec.heard')), ' ',
-        h('span', { lang: 'ar', dir: 'rtl' }, `«${st.heard}»`),
-        st.latencyMs !== null ? h('span', { class: 'muted rec-latency', dir: 'ltr' }, ` ${fmtNum(st.latencyMs)} ms`) : null)
+  const active = !!l.preparing || st?.status === 'listening' || st?.status === 'loading' || st?.status === 'stopping';
+  const live = st?.status === 'listening' && !st.paused;
+  const busy = !!l.preparing || st?.status === 'loading' || st?.status === 'stopping';
+  const mainBtn = active
+    ? h('button', { type: 'button', class: 'rec-main stop', 'data-key': 'rec-stop', disabled: !!l.preparing || st?.status === 'stopping', onclick: () => void stop(app, l) }, icon('stop'), h('span', null, t('rec.stop')))
+    : h('button', { type: 'button', class: 'rec-main', 'data-key': 'rec-start', disabled: !app.deps.quranLabKey, onclick: () => void start(app, l) }, icon('mic'), h('span', null, t('rec.start')));
+  const tools = h('div', { class: 'rec-tools' },
+    st?.status === 'listening'
+      ? h('button', { type: 'button', class: 'quiet', 'data-key': 'rec-pause', 'aria-pressed': String(st.paused), onclick: () => (st.paused ? l.controller?.resume() : l.controller?.pause()) }, icon(st.paused ? 'play' : 'pause'), st.paused ? t('rec.resume') : t('rec.pause'))
       : null,
-    h('p', { class: 'muted' }, t(usesShared(app, l) ? 'rec.privacyShared' : 'rec.privacy')),
+    h('button', { type: 'button', class: 'quiet', 'data-key': 'rec-hide', 'aria-pressed': String(l.hide), onclick: () => { l.hide = !l.hide; paint(app, l); } }, icon(l.hide ? 'eye' : 'eyeOff'), l.hide ? t('rec.show') : t('rec.hide')),
+  );
+  return h(
+    'section',
+    { class: `panel rec-console${live ? ' is-live' : ''}${busy ? ' is-busy' : ''}` },
+    h('div', { class: 'rec-console-top' },
+      mainBtn,
+      h('div', { class: 'rec-status' },
+        h('div', { class: 'rec-status-line' },
+          h('span', { class: `rec-dot ${st?.status === 'listening' && !st.paused ? (st.silent ? 'idle' : 'on') : ''}`, 'aria-hidden': 'true' }),
+          h('span', { role: 'status', 'aria-live': 'polite', class: st?.status === 'error' ? 'rec-error' : '' }, statusText(l, st))),
+        st ? locationLine(st) : null),
+      tools),
+    st ? stats(st) : null,
+    h('p', { class: 'rec-notice' }, t('rec.notice')),
   );
 }
 
 async function start(app: App, l: Live): Promise<void> {
-  const shared = usesShared(app, l);
-  if (!shared && !isLocalEndpoint(l.endpoint)) {
-    app.toast(t('rec.endpointLocalOnly'), 'error');
-    return;
+  const setPreparing = (msg: string | null) => {
+    l.preparing = msg;
+    paint(app, l);
+  };
+  // First start: download/open the model, then build the sound-unit comparison text once.
+  if (!l.unitCorpus) {
+    l.state = null;
+    setPreparing(t('rec.status.loading'));
+    try {
+      await l.engine.load((p) => setPreparing(p.bytesTotal > 0 && p.bytesDone < p.bytesTotal ? progressText(p.bytesDone, p.bytesTotal) : t('rec.status.loading')));
+      setPreparing(t('rec.preparing'));
+      const text = app.quran.text;
+      if (!text) throw new Error(t('rec.noText'));
+      l.unitCorpus = await buildUnitCorpus(text, app.quran.index, l.engine);
+      if (l.unitCorpus.mismatchedAyat.length) console.info(`Recitation tracker: ${l.unitCorpus.mismatchedAyat.length} ayat have a different word count in the model's reference table.`);
+    } catch (e) {
+      setPreparing(null);
+      app.toast(t('rec.err.model', { detail: engineErrorText(e) }), 'error');
+      return;
+    }
+    setPreparing(null);
   }
-  const account = app.deps.account;
-  if (shared && (!account || l.access !== 'approved')) {
-    app.toast(t('rec.access.needed'), 'error');
-    return;
-  }
-  const tracker = new RecitationTracker(l.corpus);
+  const tracker = new RecitationTracker(l.unitCorpus);
   const controller = new RecitationController({
-    engine: shared && account ? new LocalAsrEngine(l.endpoint, 15000, { allowRemote: true, token: () => account.accessToken() }) : new LocalAsrEngine(l.endpoint),
+    engine: l.engine,
     tracker,
     onUpdate: (s) => {
       l.state = s;
+      if (s.status === 'error') {
+        l.mic?.stop();
+        l.mic = null;
+      }
       paint(app, l);
     },
   });
@@ -196,18 +160,25 @@ async function stop(_app: App, l: Live): Promise<void> {
 }
 
 // ------------------------------------------------------------------ location + text
-function locationBar(_l: Live, st: RecitationState): HTMLElement {
+function locationLine(st: RecitationState): HTMLElement {
   const loc = st.tracker.location;
-  const mode = st.tracker.mode === 'focused' && loc ? t('rec.mode.focused', { page: loc.page ?? '—' }) : t('rec.mode.searching');
+  const focused = st.tracker.mode === 'focused' && !!loc;
+  const mode = focused ? t('rec.mode.focused', { page: loc.page ?? '—' }) : t('rec.mode.searching');
   return h(
     'div',
-    { class: 'panel rec-location', 'aria-live': 'polite' },
-    h('span', { class: `chip ${st.tracker.mode === 'focused' ? 'status-improved' : 'status-under_review'}` }, mode),
-    loc
-      ? h('span', null, t('rec.location', { surah: surahName(loc.ref.surah), ayah: fmtNum(loc.ref.ayah), page: loc.page === null ? '—' : fmtNum(loc.page), word: fmtNum(loc.position) }))
-      : h('span', { class: 'muted' }, t('rec.reciteAnywhere')),
-    h('span', { class: 'muted' }, t('rec.progress', { words: fmtNum(st.tracker.recitedWords), mistakes: fmtNum(st.tracker.findings.filter((f) => f.kind !== 'repeated').length) })),
+    { class: 'rec-location' },
+    h('span', { class: `chip ${focused ? 'status-improved' : 'status-under_review'}` }, mode),
+    loc ? h('span', null, t('rec.location', { surah: surahName(loc.ref.surah), ayah: fmtNum(loc.ref.ayah), page: loc.page === null ? '—' : fmtNum(loc.page), word: fmtNum(loc.position) })) : null,
   );
+}
+
+function stats(st: RecitationState): HTMLElement {
+  const mistakes = st.tracker.findings.filter((f) => f.kind !== 'repeated').length;
+  const tile = (value: number, label: string, cls = '') => h('div', { class: `rec-stat${cls}` }, h('strong', null, fmtNum(value)), h('span', null, label));
+  return h('div', { class: 'rec-stats', 'aria-live': 'off' },
+    tile(st.tracker.recitedWords, t('rec.stat.words')),
+    tile(mistakes, t('rec.stat.mistakes'), mistakes ? ' warn' : ''),
+    tile(st.tracker.selfCorrections, t('rec.stat.fixes')));
 }
 
 /** Range of ayat to show: the current mushaf page (or ±8 ayat when page data is missing). */
@@ -245,7 +216,7 @@ function textPanel(l: Live, st: RecitationState): HTMLElement | null {
 
 function legend(): HTMLElement {
   const items: WordStatus[] = ['correct', 'pending', 'incorrect', 'skipped', 'repeated', 'hesitation', 'uncertain'];
-  return h('div', { class: 'legend row', 'aria-label': t('quran.legend') }, items.map((s) => h('span', null, h('span', { class: `rw st-${s} rec-swatch` }, '◼'), ' ', t(`rec.st.${s}` as MessageKey))));
+  return h('div', { class: 'legend rec-legend', 'aria-label': t('quran.legend') }, items.map((s) => h('span', null, h('span', { class: `rec-swatch sw-${s}`, 'aria-hidden': 'true' }), t(`rec.st.${s}` as MessageKey))));
 }
 
 // ------------------------------------------------------------------ summary + saving
@@ -286,33 +257,4 @@ function findingRow(l: Live, f: Finding): HTMLElement {
     h('span', { class: 'rec-token', lang: 'ar', dir: 'rtl' }, f.tokenText), ' ',
     h('span', { class: 'muted' }, `→ ${categoryLabel(categoryFor(f))}`),
     saved ? h('span', { class: 'muted' }, ` (${t('rec.savedOne')})`) : null));
-}
-
-// ------------------------------------------------------------------ engine settings
-function engineSettings(app: App, l: Live): HTMLElement {
-  const input = h('input', { type: 'url', value: l.endpoint, 'aria-label': t('rec.endpoint'), dir: 'ltr' });
-  const msg = h('span', { class: 'muted', role: 'status' });
-  const saveEndpoint = async () => {
-    const v = input.value.trim();
-    const shared = sameUrl(v, sharedUrl(app));
-    if (!shared && !isLocalEndpoint(v)) {
-      msg.textContent = t('rec.endpointLocalOnly');
-      return;
-    }
-    l.endpoint = v;
-    await app.s.store.settings.set(ENDPOINT_KEY, v);
-    void refreshAccess(app, l);
-    try {
-      await new LocalAsrEngine(v, 15000, { allowRemote: shared }).load();
-      msg.textContent = t('rec.engineOk');
-    } catch (e) {
-      msg.textContent = errorText(e);
-    }
-  };
-  return h('details', { class: 'panel' },
-    h('summary', null, t('rec.engine')),
-    h('p', { class: 'muted' }, t('rec.engineHelp')),
-    h('pre', { dir: 'ltr', class: 'rec-cmd' }, 'pip install "nemo_toolkit[asr]"\npython scripts/asr_server.py'),
-    h('label', null, t('rec.endpoint'), ' ', input),
-    h('div', { class: 'row' }, h('button', { type: 'button', onclick: () => void saveEndpoint() }, t('rec.testEngine')), msg));
 }

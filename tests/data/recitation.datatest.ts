@@ -1,11 +1,12 @@
-// Real-data check of passage identification: plain (imla'i) spelling, as the model outputs it,
-// against the canonical KFGQPC Uthmani text. Skipped when the dataset is not present.
+// Real-data check of passage identification (tracker logic, Arabic comparison forms) against the
+// canonical KFGQPC Uthmani text. The TajweedFormer sound-unit forms need the model and are
+// checked in the browser. Skipped when the dataset is not present.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { DivisionIndex } from '../../src/core/quran/divisions.ts';
 import { QuranText } from '../../src/core/quran/text.ts';
-import { toHypWords } from '../../src/core/recitation/controller.ts';
+import { normWord } from '../../src/core/recitation/normalize.ts';
 import { RecitationCorpus } from '../../src/core/recitation/corpus.ts';
 import { RecitationTracker } from '../../src/core/recitation/tracker.ts';
 
@@ -17,7 +18,7 @@ describe('recitation tracker on the real Quran text', { skip: !have && 'dataset 
   const corpus = have ? new RecitationCorpus(new QuranText(JSON.parse(readFileSync(TEXT, 'utf8'))), new DivisionIndex(JSON.parse(readFileSync(DIV, 'utf8')))) : null;
   const locate = (phrase: string) => {
     const tr = new RecitationTracker(corpus as RecitationCorpus);
-    tr.push({ words: toHypWords({ text: phrase }, 0), startMs: 0, endMs: 3000, silenceBeforeMs: 0 });
+    tr.push({ words: phrase.split(' ').map((raw) => ({ raw, norm: normWord(raw) })), startMs: 0, endMs: 3000, silenceBeforeMs: 0 });
     return tr.snapshot();
   };
 

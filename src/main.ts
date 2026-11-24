@@ -4,7 +4,6 @@ import { clearSession, languageHint, loadSession, pendingWipe, saveSession, setL
 import { HtmlAudioBackend } from './browser/htmlAudioBackend.ts';
 import { CueSoundLibrary } from './browser/cueSounds.ts';
 import { createIdbStore, deleteDatabase, userDatabaseName } from './browser/idbStore.ts';
-import { RecitationAccess } from './core/recitation/access.ts';
 import { createServices } from './core/services.ts';
 import { exportBackup, restoreBackup } from './core/storage/backup.ts';
 import { createMemoryStore } from './core/storage/memoryStore.ts';
@@ -22,7 +21,9 @@ import { t, tn } from './ui/i18n/index.ts';
 /** Injected at build time from HAFEEZ_SUPABASE_URL / HAFEEZ_SUPABASE_ANON_KEY (see docs/DEPLOY.md). */
 declare const __CLOUD_URL__: string | undefined;
 declare const __CLOUD_ANON_KEY__: string | undefined;
-declare const __ASR_URL__: string | undefined;
+declare const __QURANLAB_KEY__: string | undefined;
+/** Quran Lab web key for the Recitation tracker, for every start path (local-only, guest, signed in). */
+const QURANLAB_KEY = typeof __QURANLAB_KEY__ === 'string' ? __QURANLAB_KEY__.trim() : '';
 
 const http: HttpFetch = (url, init) => fetch(url, init);
 
@@ -38,7 +39,7 @@ function startApp(root: HTMLElement, store: Store, extra: Partial<ConstructorPar
   const services = createServices({ store, clock: systemClock, ids: randomIds, fetcher: (url, init) => fetch(url, init) });
   const audioCache = new AudioCache(store.audio);
   const isOnline = () => navigator.onLine;
-  const app = new App({ services, audioBackend: new HtmlAudioBackend(), cueSounds: new CueSoundLibrary(audioCache, isOnline), audioCache, isOnline, ...extra });
+  const app = new App({ services, audioBackend: new HtmlAudioBackend(), cueSounds: new CueSoundLibrary(audioCache, isOnline), audioCache, isOnline, quranLabKey: QURANLAB_KEY, ...extra });
   return app.start(root).then(() => app);
 }
 
@@ -138,7 +139,6 @@ async function bootSignedIn(root: HTMLElement, cfg: CloudConfig, client: AuthCli
   const account: AccountController = {
     email: session.user.email,
     sync: engine,
-    recitationAccess: new RecitationAccess(cfg, http, auth),
     accessToken: () => auth.accessToken(),
     get sessionEnded() {
       return ended;
@@ -165,7 +165,7 @@ async function bootSignedIn(root: HTMLElement, cfg: CloudConfig, client: AuthCli
     },
   };
 
-  const app = await startApp(root, engine.store, { account, asrUrl: typeof __ASR_URL__ === 'string' ? __ASR_URL__.trim() : '', onLanguageChange: setLanguageHint, ...(storageError ? { storageError } : {}) });
+  const app = await startApp(root, engine.store, { account, onLanguageChange: setLanguageHint, ...(storageError ? { storageError } : {}) });
   if (welcome === 'auth.confirmed' || welcome === 'auth.passwordSaved') app.toast(t(welcome));
 
   // Keep in sync: now (full), when coming back online or to the tab, and every minute while visible.

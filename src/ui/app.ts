@@ -52,8 +52,8 @@ export interface AppDeps {
   readonly storageError?: string;
   /** Signed-in account with cloud sync; absent in local-only and guest mode. */
   readonly account?: AccountController;
-  /** Public address of the shared recognition server (empty: only a local server is offered). */
-  readonly asrUrl?: string;
+  /** Quran Lab web key for the Recitation tracker (public by design; locked to this site's origins). */
+  readonly quranLabKey?: string;
   /** Shows the sign-in screen again after continuing as a guest. */
   readonly guestSignIn?: () => void;
   /** Called when the interface language changes (remembered for the sign-in screen). */
@@ -65,7 +65,7 @@ export interface AppDeps {
 
 export type RouteName = 'dashboard' | 'wird' | 'quran' | 'recite' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
 declare const __RECITE_ENABLED__: boolean | undefined;
-/** The Recitation tracker needs a recognition server; production builds hide it (see scripts/build.mjs). */
+/** The Recitation tracker is shown when a Quran Lab web key is configured (see scripts/build.mjs). */
 const RECITE_ENABLED = typeof __RECITE_ENABLED__ === 'boolean' && __RECITE_ENABLED__;
 const ALL_NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
   { name: 'dashboard', label: 'nav.dashboard', icon: 'dashboard' },

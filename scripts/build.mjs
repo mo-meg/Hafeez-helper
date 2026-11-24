@@ -19,11 +19,11 @@ try {
 const cloudDefine = {
   __CLOUD_URL__: JSON.stringify(process.env.HAFEEZ_SUPABASE_URL ?? ''),
   __CLOUD_ANON_KEY__: JSON.stringify(process.env.HAFEEZ_SUPABASE_ANON_KEY ?? ''),
-  // Public address of the shared recognition server (e.g. a Cloudflare Tunnel URL). Empty = local only.
-  __ASR_URL__: JSON.stringify(process.env.HAFEEZ_ASR_URL ?? ''),
-  // The Recitation tracker needs a recognition server, so it is hidden in production builds.
-  // Shown in --watch (dev) builds, or when HAFEEZ_ENABLE_RECITE=1 is set.
-  __RECITE_ENABLED__: JSON.stringify(args.has('--watch') || process.env.HAFEEZ_ENABLE_RECITE === '1'),
+  // Quran Lab web key for the Recitation tracker (TajweedFormer runs in the browser). Public by
+  // design: Quran Lab accepts it only from the origins listed for it on sdk.quranlab.ai.
+  __QURANLAB_KEY__: JSON.stringify(process.env.HAFEEZ_QURANLAB_KEY ?? ''),
+  // The tracker is shown when a key is configured, in --watch (dev) builds, or with HAFEEZ_ENABLE_RECITE=1.
+  __RECITE_ENABLED__: JSON.stringify(!!process.env.HAFEEZ_QURANLAB_KEY || args.has('--watch') || process.env.HAFEEZ_ENABLE_RECITE === '1'),
 };
 const harness = args.has('--harness');
 

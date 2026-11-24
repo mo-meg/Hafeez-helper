@@ -1,5 +1,4 @@
 /** What the app shell needs to know about the signed-in account (absent in local-only mode). */
-import type { RecitationAccess } from '../../core/recitation/access.ts';
 import type { SyncEngine, SyncStatus } from '../../core/sync/syncEngine.ts';
 import { fmtRelativeTime, t, tn } from '../i18n/index.ts';
 
@@ -7,7 +6,6 @@ export interface AccountController {
   readonly email: string;
   readonly sync: SyncEngine;
   /** Access to the shared recitation server (request / approve). */
-  readonly recitationAccess: RecitationAccess;
   /** Current access token (refreshed when needed); sent to the shared recognition server. */
   accessToken(): Promise<string>;
   /** True after the refresh token was rejected; local changes keep waiting in the outbox. */
