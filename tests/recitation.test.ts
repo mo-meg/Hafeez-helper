@@ -47,6 +47,26 @@ describe('preamble', () => {
   });
 });
 
+describe('locked place', () => {
+  it('never jumps to another surah once the place is known; only the next ayat are allowed', () => {
+    const t = tracker();
+    t.push(chunk(ayahWords({ surah: 18, ayah: 10 })));
+    const at = t.snapshot().cursor as number;
+    const [from, to] = t.bounds() as [number, number];
+    assert.ok(from <= at && at < to);
+    assert.ok(to <= flatOf(18, 14), 'at most two ayat after the current one');
+    // The reciter seems to recite a passage elsewhere (e.g. a similar ayah): it is not followed.
+    for (let i = 0; i < 4; i++) t.push(chunk(ayahWords({ surah: 2, ayah: 255 })));
+    const s = t.snapshot();
+    assert.ok((s.cursor as number) >= from && (s.cursor as number) <= to, 'cursor stays in 18:10–18:13');
+    assert.deepEqual(s.location?.ref.surah, 18);
+    // Carrying on in the text is still followed.
+    t.push(chunk(ayahWords({ surah: 18, ayah: 11 })));
+    t.push(chunk(ayahWords({ surah: 18, ayah: 12 })));
+    assert.deepEqual(t.snapshot().location?.ref, { surah: 18, ayah: 13 });
+  });
+});
+
 describe('stage A: global passage identification', () => {
   it('identifies surah, ayah and word without any pre-selection', () => {
     const t = tracker();

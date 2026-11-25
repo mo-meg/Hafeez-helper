@@ -33,6 +33,8 @@ const NGRAM = 6;
 const START_NGRAM = 4;
 /** Ayah openings are tried only while the heard units are this short (longer: the whole-Quran search). */
 const MAX_START_UNITS = 90;
+/** Units kept while the place is locked but the latest units do not fit the allowed ayat. */
+const LOCKED_KEEP_UNITS = 36;
 const ch = (id: number) => String.fromCharCode(0xe000 + id);
 
 interface Placed {
@@ -84,8 +86,10 @@ export class UnitSegmenter {
    * Segments `units` (oldest first). Returns the words that are final now and how many units they
    * used; the rest stays with the caller for the next call. `cursor` is the tracker's next expected
    * word when it is following the recitation, else null. With `final` everything placeable is used.
+   * `limit` (flat words [from, to)) is where the recitation may be once its place is known: the
+   * search then stays inside it and never looks at the rest of the Quran.
    */
-  segment(units: readonly HeardUnit[], cursor: number | null, final: boolean): { words: HypWord[]; consumed: number; anchor?: number } {
+  segment(units: readonly HeardUnit[], cursor: number | null, final: boolean, limit: readonly [number, number] | null = null): { words: HypWord[]; consumed: number; anchor?: number } {
     if (!units.length) return { words: [], consumed: 0 };
     const heard = units.map((u) => ch(u.id)).join('');
     let placed: Placed | null = null;
@@ -93,9 +97,24 @@ export class UnitSegmenter {
     if (cursor !== null) {
       const c = Math.min(Math.max(0, cursor), this.corpus.size);
       const from = this.wordStart[Math.max(0, c - 12)] as number;
-      const to = Math.min(this.stream.length, (this.wordStart[c] as number) + heard.length * 2 + 60);
+      let to = Math.min(this.stream.length, (this.wordStart[c] as number) + heard.length * 2 + 60);
+      if (limit) to = Math.min(to, Math.max(from, this.wordStart[Math.min(limit[1], this.corpus.size)] as number));
       const p = this.align(heard, from, to);
       if (p.cost <= Math.max(2, heard.length * this.cfg.maxCostPerUnit)) placed = p;
+    }
+    if (!placed && limit) {
+      searched = true;
+      if (heard.length < this.cfg.minStartUnits && !final) return { words: [], consumed: 0 };
+      const from = this.wordStart[Math.max(0, Math.min(limit[0], this.corpus.size))] as number;
+      const to = this.wordStart[Math.max(0, Math.min(limit[1], this.corpus.size))] as number;
+      const p = to > from ? this.align(heard, from, to) : null;
+      if (p && p.cost <= Math.max(2, heard.length * this.cfg.maxCostPerUnit)) placed = p;
+      else {
+        // Not (yet) recognisably the next ayat: keep only the latest units, so the reciter's return
+        // to the text is found quickly, and never search anywhere else.
+        const drop = final ? units.length : Math.max(0, units.length - LOCKED_KEEP_UNITS);
+        return { words: [], consumed: drop };
+      }
     }
     if (!placed) {
       searched = true;

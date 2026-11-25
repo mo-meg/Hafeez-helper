@@ -53,7 +53,59 @@ export function ensureLive(app: App): RecitationLive | null {
 }
 
 function notify(l: RecitationLive): void {
+  syncScreenLock(l);
   for (const fn of [...l.listeners]) fn();
+}
+
+// ------------------------------------------------------------------ keep the screen on
+interface WakeLockSentinelLike {
+  release(): Promise<void>;
+}
+let screenLock: WakeLockSentinelLike | null = null;
+let screenLockWanted = false;
+let screenLockBusy = false;
+
+/**
+ * Keeps the screen on for the whole reciting session (loading, listening, paused), on the
+ * Recitation tracker page and in the Quran section alike. The browser drops the lock when the page
+ * is hidden; it is taken again when the page becomes visible.
+ */
+function syncScreenLock(l: RecitationLive): void {
+  screenLockWanted = isActive(l) || l.state?.status === 'listening';
+  void applyScreenLock();
+}
+
+async function applyScreenLock(): Promise<void> {
+  if (typeof navigator === 'undefined' || screenLockBusy) return;
+  const wl = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLockSentinelLike> } }).wakeLock;
+  if (!wl) return;
+  screenLockBusy = true;
+  let failed = false;
+  try {
+    if (screenLockWanted && !screenLock && document.visibilityState === 'visible') {
+      const s = await wl.request('screen');
+      screenLock = s;
+      (s as WakeLockSentinelLike & { addEventListener?: (t: string, f: () => void) => void }).addEventListener?.('release', () => {
+        if (screenLock === s) screenLock = null;
+      });
+    } else if (!screenLockWanted && screenLock) {
+      const s = screenLock;
+      screenLock = null;
+      await s.release();
+    }
+  } catch {
+    failed = true; // not allowed (e.g. battery saver) or already released: try again on the next change
+  } finally {
+    screenLockBusy = false;
+  }
+  // The wish may have changed while the request was running.
+  if (!failed && screenLockWanted !== !!screenLock && !(screenLockWanted && document.visibilityState !== 'visible')) void applyScreenLock();
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void applyScreenLock();
+  });
 }
 
 /** Listening, loading or stopping: the session is in use. */
