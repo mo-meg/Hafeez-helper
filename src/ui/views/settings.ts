@@ -375,10 +375,13 @@ function privacySection(app: App): HTMLElement {
 
 /** Reciting aloud: what the Recitation tracker checks. Memorization is the default. */
 function recitingSection(app: App): HTMLElement {
-  const choice = (value: Preferences['recitationCheck'], label: string, help: string) =>
+  const radio = <K extends 'recitationCheck' | 'recitationSensitivity' | 'recitationSpeed'>(key: K, name: string, value: Preferences[K], label: string, help: string) =>
     h('label', { class: 'choice' },
-      h('input', { type: 'radio', name: 'recitation-check', value, checked: app.prefs.recitationCheck === value, onchange: () => void app.act(() => app.savePrefs({ ...app.prefs, recitationCheck: value }), t('set.checkSaved')) }),
+      h('input', { type: 'radio', name, value, 'data-key': `${name}-${value}`, checked: app.prefs[key] === value, onchange: () => void app.act(() => app.savePrefs({ ...app.prefs, [key]: value }), t('set.checkSaved')) }),
       h('span', null, h('strong', null, label), h('br'), h('small', { class: 'muted' }, help)));
+  const choice = (value: Preferences['recitationCheck'], label: string, help: string) => radio('recitationCheck', 'recitation-check', value, label, help);
+  const sens = (value: Preferences['recitationSensitivity'], label: string, help: string) => radio('recitationSensitivity', 'recitation-sensitivity', value, label, help);
+  const speed = (value: Preferences['recitationSpeed'], label: string, help: string) => radio('recitationSpeed', 'recitation-speed', value, label, help);
   return section(
     'reciting',
     t('set.reciting'),
@@ -387,6 +390,16 @@ function recitingSection(app: App): HTMLElement {
       h('legend', null, t('set.checkTitle')),
       choice('memorization', t('set.checkMemo'), t('set.checkMemoHelp')),
       choice('vowels', t('set.checkVowels'), t('set.checkVowelsHelp'))),
+    h('fieldset', null,
+      h('legend', null, t('set.sensTitle')),
+      sens('lenient', t('set.sensLenient'), t('set.sensLenientHelp')),
+      sens('normal', t('set.sensNormal'), t('set.sensNormalHelp')),
+      sens('strict', t('set.sensStrict'), t('set.sensStrictHelp'))),
+    h('fieldset', null,
+      h('legend', null, t('set.speedTitle')),
+      speed('fast', t('set.speedFast'), t('set.speedFastHelp')),
+      speed('accurate', t('set.speedAccurate'), t('set.speedAccurateHelp'))),
+    h('p', { class: 'muted' }, h('small', null, t('set.recApplyNext'))),
     h('p', { class: 'muted' }, h('small', null, t('rec.notice'))),
   );
 }

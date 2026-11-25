@@ -76,6 +76,10 @@ export const PreferencesSchema = z.object({
   periodPlan: PeriodPlanSchema.nullable(),
   /** Reciting aloud: what the Recitation tracker checks (words only, or also letters and vowels). */
   recitationCheck: z.enum(['memorization', 'vowels']),
+  /** How readily a suspected mistake is reported (see tracker SENSITIVITY). */
+  recitationSensitivity: z.enum(['lenient', 'normal', 'strict']),
+  /** Recognition chunks: 'fast' 160 ms (hadr) or 'accurate' 320 ms (the model's default). */
+  recitationSpeed: z.enum(['fast', 'accurate']),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
@@ -111,6 +115,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   language: 'ar',
   periodPlan: null,
   recitationCheck: 'memorization',
+  recitationSensitivity: 'normal',
+  recitationSpeed: 'fast',
 };
 
 /** Merges stored (possibly older/partial) preferences onto defaults; invalid fields fall back. */

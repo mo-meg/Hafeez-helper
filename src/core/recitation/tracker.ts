@@ -74,6 +74,8 @@ export interface TrackerConfig {
    */
   readonly lockAheadAyat: number;
   readonly lockBackAyat: number;
+  /** Skipped words are reported only in runs of at least this many (a lone unheard word is not). */
+  readonly minSkipRun: number;
 }
 
 /**
@@ -83,8 +85,22 @@ export interface TrackerConfig {
  */
 export const CHECK_OK_SIM: Record<CheckLevel, number> = { memorization: 0.45, vowels: 0.9 };
 
-export function trackerConfigFor(level: CheckLevel): Partial<TrackerConfig> {
-  return { okSim: CHECK_OK_SIM[level] };
+/** How readily suspected mistakes are reported. */
+export type Sensitivity = 'lenient' | 'normal' | 'strict';
+
+/**
+ * Per sensitivity: the similarity needed relative to the check level, the self-correction wait,
+ * the words to move past, the lowest model confidence still judged, and the shortest skipped run.
+ */
+export const SENSITIVITY: Record<Sensitivity, { okSim: Record<CheckLevel, number>; confirmMs: number; confirmWords: number; minConfidence: number; minSkipRun: number }> = {
+  lenient: { okSim: { memorization: 0.3, vowels: 0.8 }, confirmMs: 2500, confirmWords: 3, minConfidence: 0.65, minSkipRun: 2 },
+  normal: { okSim: CHECK_OK_SIM, confirmMs: 1500, confirmWords: 2, minConfidence: 0.5, minSkipRun: 1 },
+  strict: { okSim: { memorization: 0.6, vowels: 0.95 }, confirmMs: 1000, confirmWords: 1, minConfidence: 0.35, minSkipRun: 1 },
+};
+
+export function trackerConfigFor(level: CheckLevel, sensitivity: Sensitivity = 'normal'): Partial<TrackerConfig> {
+  const s = SENSITIVITY[sensitivity];
+  return { okSim: s.okSim[level], confirmMs: s.confirmMs, confirmWords: s.confirmWords, minConfidence: s.minConfidence, minSkipRun: s.minSkipRun };
 }
 
 /**
@@ -123,6 +139,7 @@ export const DEFAULT_TRACKER_CONFIG: TrackerConfig = {
   okSim: CHECK_OK_SIM.memorization,
   lockAheadAyat: 2,
   lockBackAyat: 1,
+  minSkipRun: 1,
 };
 
 interface Pending {
@@ -420,10 +437,25 @@ export class RecitationTracker {
     for (const [flat, p] of [...this.pending]) {
       const due = all || (this.nowMs - p.atMs >= this.config.confirmMs && cursor >= flat + 1 + this.config.confirmWords);
       if (!due) continue;
+      if (p.kind === 'skipped' && this.skipRun(flat) < this.config.minSkipRun) {
+        // A lone missing word is more likely swallowed in fast recitation than left out.
+        this.pending.delete(flat);
+        this.status.set(flat, 'uncertain');
+        continue;
+      }
       this.pending.delete(flat);
       this.status.set(flat, p.kind);
       this.record(p.kind, flat, p.heard, p.atMs);
     }
+  }
+
+  /** Length of the run of (suspected or confirmed) skipped words that contains `flat`. */
+  private skipRun(flat: number): number {
+    const skipped = (k: number) => this.pending.get(k)?.kind === 'skipped' || this.status.get(k) === 'skipped';
+    let n = 1;
+    for (let k = flat - 1; k >= 0 && skipped(k); k--) n++;
+    for (let k = flat + 1; k < this.corpus.size && skipped(k); k++) n++;
+    return n;
   }
 
   private record(kind: FindingKind, flat: number, heard: string | null, atMs: number): void {
