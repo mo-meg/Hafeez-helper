@@ -163,7 +163,8 @@ export async function startReciting(app: App, l: RecitationLive): Promise<boolea
     }
     l.preparing = false;
   }
-  const tracker = new RecitationTracker(l.unitCorpus, trackerConfigFor(app.prefs.recitationCheck));
+  const tracker = new RecitationTracker(l.unitCorpus, trackerConfigFor(app.prefs.recitationCheck, app.prefs.recitationSensitivity));
+  l.engine.speed = app.prefs.recitationSpeed;
   const controller = new RecitationController({
     engine: l.engine,
     tracker,

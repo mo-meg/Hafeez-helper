@@ -34,6 +34,12 @@ export class TajweedFormerEngine implements RecitationEngine {
   private model: TajweedModel | null = null;
   /** Shortest-chunk context of the model (fast recitation, hadr): results arrive soonest. */
   private context: string | undefined;
+  /**
+   * 'fast': the shortest chunks (160 ms) — the page keeps up with hadr, the model hears less ahead.
+   * 'accurate': the model's default chunks (320 ms) — a little later, but each decision hears more.
+   * Read when a take starts, so a change applies from the next start / resume.
+   */
+  speed: 'fast' | 'accurate' = 'fast';
   private loading: Promise<void> | null = null;
 
   constructor(key: string) {
@@ -75,7 +81,7 @@ export class TajweedFormerEngine implements RecitationEngine {
     if (!this.model) throw new Error('The model is not loaded.');
     const seps = this.separators;
     // Only the heads the tracker reads: recognition (always computed) and confidence.
-    const session: TajweedSession = this.model.session({ sampleRate: 16000, heads: ['log_probs', 'conf'], ...(this.context ? { context: this.context } : {}) });
+    const session: TajweedSession = this.model.session({ sampleRate: 16000, heads: ['log_probs', 'conf'], ...(this.speed === 'fast' && this.context ? { context: this.context } : {}) });
     let finishing = false;
     let speech = false;
     const chunks = (async () => {

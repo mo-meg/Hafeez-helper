@@ -150,6 +150,30 @@ describe('stage B: focused tracking', () => {
     assert.deepEqual(s.findings.map((f) => [f.kind, f.flat]), [['skipped', base + 8]]);
   });
 
+  it('lenient: a lone missing word is not marked skipped, two in a row are', () => {
+    const run = (gap: number) => {
+      clock = 0;
+      const t = new RecitationTracker(recitationCorpus().corpus, trackerConfigFor('memorization', 'lenient'));
+      const base = flatOf(20, 30);
+      t.push(chunk(flatWords(base, 6)));
+      t.push(chunk([...flatWords(base + 6, 2), ...flatWords(base + 8 + gap, 3)]));
+      t.push(chunk(flatWords(base + 11 + gap, 5)));
+      t.finish();
+      return t.snapshot().findings.filter((f) => f.kind === 'skipped').map((f) => f.flat - base);
+    };
+    assert.deepEqual(run(1), []);
+    assert.deepEqual(run(2), [8, 9]);
+  });
+
+  it('sensitivity levels order the thresholds', () => {
+    const l = trackerConfigFor('memorization', 'lenient');
+    const n = trackerConfigFor('memorization');
+    const st = trackerConfigFor('memorization', 'strict');
+    assert.ok((l.okSim as number) < (n.okSim as number) && (n.okSim as number) < (st.okSim as number));
+    assert.ok((l.confirmMs as number) > (n.confirmMs as number) && (n.confirmMs as number) > (st.confirmMs as number));
+    assert.equal(n.okSim, 0.45);
+  });
+
   it('never marks repetition', () => {
     const t = tracker();
     const base = flatOf(30, 10);
