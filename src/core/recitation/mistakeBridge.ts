@@ -3,7 +3,7 @@ import { suggestedCategory } from '../model.ts';
 import type { MarkResult, MistakeService } from '../mistakes/mistakeService.ts';
 import type { Finding, FindingKind } from './tracker.ts';
 
-/** Kinds offered for saving by default (repetitions are recorded only if the user opts in). */
+/** Kinds offered for saving by default. */
 export const DEFAULT_SAVE_KINDS: readonly FindingKind[] = ['incorrect', 'skipped', 'hesitation'];
 
 export function categoryFor(f: Finding): MistakeCategory {
@@ -14,7 +14,6 @@ export function categoryFor(f: Finding): MistakeCategory {
     case 'skipped':
       return 'forgotten';
     case 'hesitation':
-    case 'repeated':
       return 'hesitation';
   }
 }

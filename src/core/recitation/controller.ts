@@ -42,7 +42,8 @@ interface TakeCtx {
 /**
  * Glue between audio input, the streaming engine and the tracker.
  *
- * The engine decodes continuously and re-sends the whole take on every update (every ~320 ms).
+ * The engine decodes continuously and re-sends the whole take on every update (every ~160 ms: the
+ * shortest context the model offers, for fast recitation).
  * Settled units (that will not change any more) are cut into the canonical words by the
  * UnitSegmenter; each word reaches the tracker once, the last one only when the next has begun or
  * the take ended.
@@ -169,18 +170,20 @@ export class RecitationController {
     if (ctx === this.ctx) this.silent = !u.speech;
     const settled = u.final ? u.units.length : Math.min(u.settledUnits, u.units.length);
     let words: HypWord[] = [];
+    let anchor: number | undefined;
     if (settled > ctx.consumed) {
       const pending: HeardUnit[] = u.units.slice(ctx.consumed, settled).map((x) => ({ ...x, startMs: ctx.offsetMs + x.startMs, endMs: ctx.offsetMs + x.endMs }));
       const cursor = this.tracker.mode === 'focused' ? this.tracker.cursor : null;
       const r = this.segmenter.segment(pending, cursor, u.final);
       ctx.consumed += r.consumed;
       words = r.words;
+      anchor = r.anchor;
     }
     if (words.length) {
       const first = words[0] as HypWord;
       const last = words[words.length - 1] as HypWord;
       const silenceBeforeMs = this.lastEndMs === null ? 0 : Math.max(0, (first.startMs as number) - this.lastEndMs);
-      this.tracker.push({ words, startMs: first.startMs as number, endMs: last.endMs as number, silenceBeforeMs });
+      this.tracker.push({ words, startMs: first.startMs as number, endMs: last.endMs as number, silenceBeforeMs, ...(anchor !== undefined ? { anchor } : {}) });
       this.lastEndMs = last.endMs as number;
     } else if (u.final) {
       const at = this.lastEndMs ?? ctx.offsetMs;

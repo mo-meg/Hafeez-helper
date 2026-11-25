@@ -20,11 +20,19 @@ export interface SegmentConfig {
   readonly minMargin: number;
   /** Units kept while searching (older ones are dropped). */
   readonly maxBuffer: number;
+  /** Units needed before the ayah openings are searched (the fast first lock-on). */
+  readonly minStartUnits: number;
+  /** Words of each ayah opening that are indexed for the fast lock-on. */
+  readonly startWords: number;
 }
 
-export const DEFAULT_SEGMENT: SegmentConfig = { minSearchUnits: 18, maxCostPerUnit: 0.35, minMargin: 3, maxBuffer: 240 };
+export const DEFAULT_SEGMENT: SegmentConfig = { minSearchUnits: 18, maxCostPerUnit: 0.35, minMargin: 3, maxBuffer: 240, minStartUnits: 8, startWords: 4 };
 
 const NGRAM = 6;
+/** Shorter n-grams for the ayah-opening index: few units are heard when the first lock-on is tried. */
+const START_NGRAM = 4;
+/** Ayah openings are tried only while the heard units are this short (longer: the whole-Quran search). */
+const MAX_START_UNITS = 90;
 const ch = (id: number) => String.fromCharCode(0xe000 + id);
 
 interface Placed {
@@ -53,6 +61,7 @@ export class UnitSegmenter {
   private readonly wordAt: Int32Array;
   private readonly wordStart: Int32Array;
   private index: Map<string, number[]> | null = null;
+  private startIdx: Map<string, { p: number; s: number }[]> | null = null;
 
   constructor(corpus: RecitationCorpus, cfg: Partial<SegmentConfig> = {}) {
     this.corpus = corpus;
@@ -76,10 +85,11 @@ export class UnitSegmenter {
    * used; the rest stays with the caller for the next call. `cursor` is the tracker's next expected
    * word when it is following the recitation, else null. With `final` everything placeable is used.
    */
-  segment(units: readonly HeardUnit[], cursor: number | null, final: boolean): { words: HypWord[]; consumed: number } {
+  segment(units: readonly HeardUnit[], cursor: number | null, final: boolean): { words: HypWord[]; consumed: number; anchor?: number } {
     if (!units.length) return { words: [], consumed: 0 };
     const heard = units.map((u) => ch(u.id)).join('');
     let placed: Placed | null = null;
+    let searched = false;
     if (cursor !== null) {
       const c = Math.min(Math.max(0, cursor), this.corpus.size);
       const from = this.wordStart[Math.max(0, c - 12)] as number;
@@ -88,15 +98,79 @@ export class UnitSegmenter {
       if (p.cost <= Math.max(2, heard.length * this.cfg.maxCostPerUnit)) placed = p;
     }
     if (!placed) {
-      if (heard.length < this.cfg.minSearchUnits && !final) return { words: [], consumed: 0 };
-      placed = this.search(heard);
+      searched = true;
+      // Fast first lock-on: reciting usually starts at the beginning of an ayah.
+      if (heard.length >= this.cfg.minStartUnits && heard.length <= MAX_START_UNITS) placed = this.searchStart(heard);
+      if (!placed && heard.length < this.cfg.minSearchUnits && !final) return { words: [], consumed: 0 };
+      placed ??= this.search(heard);
       if (!placed) {
         // Nothing found: keep the most recent units for the next try, drop the oldest.
         const drop = final ? units.length : Math.max(0, units.length - this.cfg.maxBuffer);
         return { words: [], consumed: drop };
       }
     }
-    return this.cut(units, placed, final);
+    const r = this.cut(units, placed, final);
+    if (searched && r.firstWord !== null) return { words: r.words, consumed: r.consumed, anchor: r.firstWord };
+    return { words: r.words, consumed: r.consumed };
+  }
+
+  /**
+   * Searches only the openings (first few words) of every ayah: far fewer places than the whole
+   * Quran, so a short stretch of units is enough. Units before the opening (isti'adha, basmala)
+   * are left out. Confident only with a clear margin over every other opening.
+   */
+  private searchStart(heard: string): Placed | null {
+    const idx = this.startIndex();
+    const votes = new Map<number, { n: number; h0: number }>();
+    for (let i = 0; i + START_NGRAM <= heard.length; i++) {
+      for (const hit of idx.get(heard.slice(i, i + START_NGRAM)) ?? []) {
+        const h0 = i - (hit.p - hit.s);
+        if (h0 < 0) continue; // the heard units would begin inside the ayah
+        const v = votes.get(hit.s);
+        if (v) v.n++;
+        else votes.set(hit.s, { n: 1, h0 });
+      }
+    }
+    const ranked = [...votes.entries()].sort((a, b) => b[1].n - a[1].n || a[0] - b[0]).slice(0, 16);
+    const cands: { p: Placed; per: number }[] = [];
+    for (const [s, v] of ranked) {
+      const tail = heard.slice(v.h0);
+      if (tail.length < this.cfg.minStartUnits) continue;
+      const p = this.align(tail, s, Math.min(this.stream.length, s + Math.ceil(tail.length * 1.5) + 12));
+      if (p.start > s + 2) continue; // must begin at the opening
+      const map = new Int32Array(heard.length).fill(-1);
+      map.set(p.map, v.h0);
+      cands.push({ p: { map, cost: p.cost, start: p.start, end: p.end }, per: p.cost / tail.length });
+    }
+    cands.sort((a, b) => a.p.cost - b.p.cost);
+    const best = cands[0];
+    if (!best || best.per > this.cfg.maxCostPerUnit) return null;
+    const other = cands.find((c) => Math.abs(c.p.start - best.p.start) > 4);
+    if (other && other.p.cost - best.p.cost < 2) return null; // several ayat open alike: wait for more
+    return best.p;
+  }
+
+  private startIndex(): Map<string, { p: number; s: number }[]> {
+    if (this.startIdx) return this.startIdx;
+    const m = new Map<string, { p: number; s: number }[]>();
+    const words = this.corpus.words;
+    for (let k = 1; k < words.length; k++) {
+      // Al-Fatihah 1:1 (the basmala) is left out: a basmala said before any surah would lock onto it.
+      // Its 1:2 opening still finds Al-Fatihah, with the basmala as lead-in.
+      if (words[k]?.position !== 1 || k === 0) continue;
+      const s = this.wordStart[k] as number;
+      let endWord = k + 1;
+      while (endWord < words.length && endWord < k + this.cfg.startWords && words[endWord]?.position !== 1) endWord++;
+      const e = this.wordStart[endWord] as number;
+      for (let p = s; p + START_NGRAM <= e; p++) {
+        const key = this.stream.slice(p, p + START_NGRAM);
+        const l = m.get(key);
+        if (l) l.push({ p, s });
+        else m.set(key, [{ p, s }]);
+      }
+    }
+    this.startIdx = m;
+    return m;
   }
 
   /** Whole-Quran search with a unit n-gram index; confident only with a clear margin. */
@@ -190,7 +264,7 @@ export class UnitSegmenter {
   }
 
   /** Groups heard units by the word of the text unit they line up with. */
-  private cut(units: readonly HeardUnit[], p: Placed, final: boolean): { words: HypWord[]; consumed: number } {
+  private cut(units: readonly HeardUnit[], p: Placed, final: boolean): { words: HypWord[]; consumed: number; firstWord: number | null } {
     const groups: { word: number; from: number; to: number }[] = [];
     let lead = 0; // inserted units before the first placed one (e.g. a preamble) are dropped
     for (let i = 0; i < units.length; i++) {
@@ -220,6 +294,6 @@ export class UnitSegmenter {
       };
     });
     const consumed = final ? units.length : done.length ? (done[done.length - 1] as { to: number }).to : lead;
-    return { words, consumed };
+    return { words, consumed, firstWord: done[0]?.word ?? null };
   }
 }

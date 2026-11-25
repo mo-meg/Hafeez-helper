@@ -12,16 +12,24 @@
  * The control bar lives on <body>, outside <main>, and survives re-renders and route changes within
  * the Quran section. Leaving the Quran section or pressing X / Esc ends it.
  *
+ * Reciting focus mode ('voice', started from the floating mic button) shares the bar, Hafeez mode,
+ * swipes and portions, but has no speed: the page follows the reciter's voice. The Recitation
+ * tracker colours the words in place, the page scrolls so the current word stays at a comfortable
+ * height, and it moves on to the next portion by itself when the reciter carries on past its end.
+ * Exit (X / Esc) stops listening and shows the session summary.
+ *
  * Focus mode deliberately does NOT request browser full screen: Chrome always shows a
  * "To exit full screen…" notice when a page enters full screen, which covered the text at start.
  * Hiding the app chrome (FOCUS_CLASS) is enough.
  */
 import { clampSpeed, minutesLeft, pxPerSecond, SPEED_DEFAULT, SPEED_MAX, SPEED_MIN } from '../../core/reading/autoScroll.ts';
+import type { WordStatus } from '../../core/recitation/tracker.ts';
 import type { App } from '../app.ts';
 import { h, replaceChildren } from '../dom.ts';
 import { fmtNum, t, tn } from '../i18n/index.ts';
 import { openDialog } from './dialog.ts';
 import { icon } from './icons.ts';
+import { ensureLive, isActive, startReciting, statusLabel, stopReciting, summaryPanel, togglePause, type RecitationLive } from './reciteSession.ts';
 
 const SPEED_KEY = 'autoScrollSpeed';
 const HAFEEZ_KEY = 'autoScrollHafeez';
@@ -56,11 +64,23 @@ function restoreAnchor(a: { el: Element; top: number } | null): void {
 /** What the Quran view tells the controller about the portion on screen. */
 export interface PortionInfo {
   readonly label: string;
+  /** First and last ayah index of the portion (reciting mode: when to move on). */
+  readonly start?: number;
+  readonly end?: number;
   readonly next: { readonly hash: string; readonly label: string } | null;
   readonly prev?: { readonly hash: string; readonly label: string } | null;
 }
 
 interface WakeLockLike { release(): Promise<void> }
+
+/** 'timed': classic auto scroll at a set speed. 'voice': reciting focus mode, the page follows the voice. */
+export type ScrollMode = 'timed' | 'voice';
+/** Reciting mode: the current word is kept between these fractions of the viewport height. */
+const FOLLOW_BAND: readonly [number, number] = [0.2, 0.55];
+const FOLLOW_AT = 0.38;
+/** After the reader scrolls by hand, following the voice waits this long. */
+const FOLLOW_IDLE_MS = 2500;
+const RS_CLASSES = ['rs-correct', 'rs-incorrect', 'rs-skipped', 'rs-hesitation'];
 
 /**
  * Hafeez (memorization) mode: the lower half of the screen shows only faint "ghost" words, so the
@@ -157,25 +177,93 @@ export class AutoScrollSession {
     }
   };
 
-  private constructor(app: App, speed: number) {
+  readonly mode: ScrollMode;
+  /** Reciting mode: the shared recitation session and its repaint hook. */
+  private live: RecitationLive | null = null;
+  private readonly onLive = () => this.liveUpdate();
+  /** Reciting mode: Quran words on screen by "ayahIndex:position". */
+  private wordEls = new Map<string, HTMLElement>();
+  /** Reciting mode: classes applied to words, to update only what changed. */
+  private painted = new Map<HTMLElement, string>();
+  private curEl: HTMLElement | null = null;
+  private lastFollowed = -1;
+  private manualAt = 0;
+  /** Reciting mode: a move to another portion is under way (wait for its render). */
+  private advancing = false;
+
+  private constructor(app: App, speed: number, mode: ScrollMode = 'timed') {
     this.app = app;
+    this.mode = mode;
     this.speed = clampSpeed(speed);
     this.status = h('span', { class: 'as-status', 'aria-live': 'off' });
     this.hafeezBtn = h('button', { type: 'button', class: 'icon', 'data-key': 'as-hafeez', onclick: () => this.cycleHafeez() });
     this.toggleBtn = h('button', { type: 'button', class: 'icon', 'data-key': 'as-toggle', onclick: () => this.toggle() });
     const btn = (key: string, label: string, ic: string, fn: () => void) =>
       h('button', { type: 'button', class: 'icon', 'data-key': key, 'aria-label': label, title: label, onclick: fn }, icon(ic));
-    this.bar = h(
-      'div',
-      { class: 'autoscroll-bar', role: 'toolbar', 'aria-label': t('auto.bar') },
-      this.toggleBtn,
-      btn('as-back', t('auto.back'), 'rewind', () => this.back()),
-      btn('as-slower', t('auto.slower'), 'minus', () => this.setSpeed(this.speed - 1)),
-      this.status,
-      btn('as-faster', t('auto.faster'), 'plus', () => this.setSpeed(this.speed + 1)),
-      this.hafeezBtn,
-      btn('as-close', t('auto.close'), 'close', () => this.stop()),
-    );
+    this.bar = mode === 'voice'
+      ? h(
+        'div',
+        { class: 'autoscroll-bar voice', role: 'toolbar', 'aria-label': t('voice.bar') },
+        this.toggleBtn,
+        btn('as-prev', t('voice.prev'), 'prev', () => this.stepPortion(-1)),
+        this.status,
+        btn('as-next', t('voice.next'), 'next', () => this.stepPortion(1)),
+        this.hafeezBtn,
+        btn('as-close', t('voice.close'), 'close', () => this.stop()),
+      )
+      : h(
+        'div',
+        { class: 'autoscroll-bar', role: 'toolbar', 'aria-label': t('auto.bar') },
+        this.toggleBtn,
+        btn('as-back', t('auto.back'), 'rewind', () => this.back()),
+        btn('as-slower', t('auto.slower'), 'minus', () => this.setSpeed(this.speed - 1)),
+        this.status,
+        btn('as-faster', t('auto.faster'), 'plus', () => this.setSpeed(this.speed + 1)),
+        this.hafeezBtn,
+        btn('as-close', t('auto.close'), 'close', () => this.stop()),
+      );
+  }
+
+  /**
+   * Starts reciting focus mode (the floating mic button): focus layout, listening starts at once,
+   * and the page follows the recitation.
+   */
+  static startVoice(app: App, portion: PortionInfo): AutoScrollSession | null {
+    const l = ensureLive(app);
+    if (!l) {
+      app.toast(t('rec.noText'), 'error');
+      return null;
+    }
+    app.autoScroll?.stop();
+    const session = new AutoScrollSession(app, SPEED_DEFAULT, 'voice');
+    app.autoScroll = session;
+    session.portion = portion;
+    session.live = l;
+    const anchor = captureAnchor();
+    document.body.classList.add(FOCUS_CLASS, 'reciting');
+    document.body.append(session.bar);
+    restoreAnchor(anchor);
+    document.addEventListener('keydown', session.onKey);
+    window.addEventListener('resize', session.onResize);
+    window.addEventListener('wheel', session.onWheel, { passive: true });
+    window.addEventListener('touchmove', session.onTouchMove, { passive: true });
+    window.addEventListener('touchend', session.onTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', session.onTouchEnd, { passive: true });
+    session.measure();
+    session.warming = false;
+    session.collectWords();
+    l.listeners.add(session.onLive);
+    session.render();
+    session.toggleBtn.focus({ preventScroll: true });
+    void app.s.store.settings.get<HafeezMode>(HAFEEZ_KEY).then((v) => {
+      if ((v === 'half' || v === 'hint') && !session.stopped && session.hafeez === 'off') session.setHafeez(v, false);
+    }).catch(() => undefined);
+    void session.lockScreen();
+    app.toast(t('voice.hint'));
+    void startReciting(app, l).then((ok) => {
+      if (!ok && !session.stopped) session.render();
+    });
+    return session;
   }
 
   /** Starts focus mode from the current scroll position (called from a click handler). */
@@ -232,6 +320,18 @@ export class AutoScrollSession {
   setPortion(p: PortionInfo): void {
     this.portion = p;
     this.endPrompted = false;
+    if (this.mode === 'voice') {
+      this.advancing = false;
+      // The text was re-rendered: find the new word elements and paint them again.
+      requestAnimationFrame(() => {
+        if (this.stopped) return;
+        this.collectWords();
+        this.measure();
+        if (this.hafeez !== 'off') this.hzBuild();
+        this.liveUpdate();
+      });
+      return;
+    }
     queueMicrotask(() => this.measure());
     // The text was re-rendered: re-measure the lines once the new layout exists.
     if (this.hafeez !== 'off') requestAnimationFrame(() => this.hzBuild());
@@ -261,6 +361,13 @@ export class AutoScrollSession {
   /** Swipe navigation inside focus mode: moves to another portion and keeps playing if it was playing. */
   goToPortion(hash: string): void {
     if (this.stopped) return;
+    if (this.mode === 'voice') {
+      // Listening carries on; the new portion is painted when it renders.
+      this.advancing = true;
+      this.lastFollowed = -1;
+      this.app.navigate(hash);
+      return;
+    }
     const wasPlaying = !this.paused;
     this.clearResumeTimer();
     this.clearManualTimer();
@@ -287,6 +394,14 @@ export class AutoScrollSession {
   }
 
   toggle(): void {
+    if (this.mode === 'voice') {
+      const l = this.live;
+      if (!l) return;
+      if (l.state?.status === 'listening') togglePause(l);
+      else if (!isActive(l)) void startReciting(this.app, l);
+      this.render();
+      return;
+    }
     if (this.paused) this.resume();
     else this.pause();
   }
@@ -339,6 +454,7 @@ export class AutoScrollSession {
     if (this.stopped) return;
     this.commit();
     this.stopped = true;
+    if (this.mode === 'voice') this.endReciting();
     if (this.statusTimer) clearInterval(this.statusTimer);
     this.clearResumeTimer();
     this.clearManualTimer();
@@ -369,7 +485,7 @@ export class AutoScrollSession {
 
   /** Starts gliding from the current scroll position to the end of the page. */
   private startGlide(ramp: boolean): void {
-    if (this.glide || this.stopped || this.paused) return;
+    if (this.mode === 'voice' || this.glide || this.stopped || this.paused) return;
     const el = document.getElementById('main');
     this.measure();
     const base = window.scrollY;
@@ -437,6 +553,10 @@ export class AutoScrollSession {
 
   /** The reader is scrolling by hand: hand control back, then glide on once they stop. */
   private manual(): void {
+    if (this.mode === 'voice') {
+      this.manualAt = Date.now(); // following the voice waits while the reader looks around
+      return;
+    }
     if (this.paused || this.stopped || this.warming) return;
     if (this.glide) this.commit();
     this.scheduleManualResume();
@@ -585,6 +705,7 @@ export class AutoScrollSession {
     const target = e.target as HTMLElement | null;
     if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
     let handled = true;
+    if (this.mode === 'voice' && e.key !== ' ' && e.key !== 'Spacebar' && e.key !== 'Escape') return;
     if (e.key === ' ' || e.key === 'Spacebar') {
       if (target?.tagName === 'BUTTON' && this.bar.contains(target)) return; // let the focused button act
       this.toggle();
@@ -596,6 +717,7 @@ export class AutoScrollSession {
   }
 
   private render(): void {
+    if (this.mode === 'voice') return this.renderVoice();
     const label = this.paused ? t('auto.resume') : t('auto.pause');
     this.toggleBtn.setAttribute('aria-label', label);
     this.toggleBtn.title = label;
@@ -615,6 +737,7 @@ export class AutoScrollSession {
   }
 
   private renderStatus(): void {
+    if (this.mode === 'voice') return;
     const mins = minutesLeft(this.remainingPx(), pxPerSecond(this.speed, this.app.prefs.fontScale));
     const time = tn('auto.minutes', mins);
     // Long form ("26 minutes | 15") and a compact one for narrow phones; CSS shows one of them.
@@ -626,6 +749,120 @@ export class AutoScrollSession {
     this.status.title = t('auto.statusLong', { time, speed: fmtNum(this.speed), max: fmtNum(SPEED_MAX) });
     this.status.dataset.speed = String(this.speed);
     this.status.dataset.minutes = String(mins);
+  }
+
+  // ------------------------------------------------------------------ reciting (voice) mode
+  private renderVoice(): void {
+    const l = this.live;
+    const st = l?.state;
+    const listening = st?.status === 'listening';
+    const busy = !!l && (l.preparing || st?.status === 'loading' || st?.status === 'stopping');
+    const label = listening ? (st.paused ? t('rec.resume') : t('rec.pause')) : t('rec.start');
+    this.toggleBtn.setAttribute('aria-label', label);
+    this.toggleBtn.title = label;
+    this.toggleBtn.disabled = busy;
+    this.toggleBtn.classList.toggle('is-busy', busy);
+    this.toggleBtn.classList.toggle('is-live', listening && !st.paused && !st.silent);
+    replaceChildren(this.toggleBtn, icon(listening ? (st.paused ? 'mic' : 'pause') : 'mic'));
+    this.bar.classList.toggle('paused', !listening || st.paused);
+    const hz = this.hafeez === 'off' ? t('auto.hafeezOff') : this.hafeez === 'half' ? t('auto.hafeezHalf') : t('auto.hafeezHint');
+    this.hafeezBtn.setAttribute('aria-label', hz);
+    this.hafeezBtn.title = hz;
+    this.hafeezBtn.setAttribute('aria-pressed', String(this.hafeez !== 'off'));
+    this.hafeezBtn.dataset.mode = this.hafeez;
+    replaceChildren(this.hafeezBtn, icon(this.hafeez === 'off' ? 'eye' : this.hafeez === 'half' ? 'eyeOff' : 'eyeHint'));
+    for (const [key, disabled] of [['as-prev', !this.portion?.prev], ['as-next', !this.portion?.next]] as const) {
+      const b = this.bar.querySelector<HTMLButtonElement>(`[data-key="${key}"]`);
+      if (b) b.disabled = disabled;
+    }
+    this.status.textContent = l ? statusLabel(l) : '';
+  }
+
+  private stepPortion(dir: 1 | -1): void {
+    const dest = dir > 0 ? this.portion?.next : this.portion?.prev;
+    if (dest) this.goToPortion(dest.hash);
+  }
+
+  /** Indexes the Quran words now on screen. */
+  private collectWords(): void {
+    this.wordEls = new Map();
+    this.painted = new Map();
+    this.curEl = null;
+    for (const el of document.querySelectorAll<HTMLElement>('#main .quran button.w')) this.wordEls.set(`${el.dataset.a}:${el.dataset.p}`, el);
+  }
+
+  /** A new recitation state: colour words, follow the current word, move on at the portion's end. */
+  private liveUpdate(): void {
+    if (this.stopped || this.mode !== 'voice') return;
+    const l = this.live;
+    const st = l?.state;
+    this.render();
+    if (!l || !st) return;
+    const words = l.corpus.words;
+    const want = new Map<HTMLElement, string>();
+    for (const [flat, status] of st.tracker.status as ReadonlyMap<number, WordStatus>) {
+      const w = words[flat];
+      const el = w ? this.wordEls.get(`${w.ayahIndex}:${w.position}`) : undefined;
+      if (el) want.set(el, `rs-${status}`);
+    }
+    for (const [el, cls] of this.painted) if (want.get(el) !== cls) el.classList.remove(cls);
+    for (const [el, cls] of want) if (this.painted.get(el) !== cls) el.classList.add(cls);
+    this.painted = want;
+    const cursor = st.tracker.cursor;
+    const at = cursor === null ? null : words[Math.min(cursor, words.length - 1)];
+    const cur = at ? this.wordEls.get(`${at.ayahIndex}:${at.position}`) ?? null : null;
+    if (cur !== this.curEl) {
+      this.curEl?.classList.remove('rs-cur');
+      cur?.classList.add('rs-cur');
+      this.curEl = cur;
+    }
+    if (!at || cursor === null || this.advancing) return;
+    const p = this.portion;
+    if (p?.end !== undefined && p.start !== undefined && (at.ayahIndex > p.end || at.ayahIndex < p.start)) {
+      // The reciter carried on past the portion (or is somewhere else): show where they are.
+      if (at.ayahIndex === p.end + 1 && p.next) this.goToPortion(p.next.hash);
+      else {
+        const page = l.corpus.pageAt(Math.min(cursor, words.length - 1));
+        if (page !== null) this.goToPortion(`#/quran?page=${page}&focus=${at.ayahIndex}`);
+      }
+      return;
+    }
+    if (cur && cursor !== this.lastFollowed) {
+      this.lastFollowed = cursor;
+      this.follow(cur);
+    }
+  }
+
+  /** Scrolls so the current word sits a little above the middle (only when it left the band). */
+  private follow(el: HTMLElement): void {
+    if (Date.now() - this.manualAt < FOLLOW_IDLE_MS || this.touching) return;
+    const r = el.getBoundingClientRect();
+    const hgt = window.innerHeight;
+    if (r.top >= hgt * FOLLOW_BAND[0] && r.bottom <= hgt * FOLLOW_BAND[1]) return;
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: Math.max(0, window.scrollY + r.top - hgt * FOLLOW_AT), behavior: reduce ? 'auto' : 'smooth' });
+  }
+
+  /** Exit: stop listening, unpaint, and show the summary so mistakes can be saved. */
+  private endReciting(): void {
+    const l = this.live;
+    document.body.classList.remove('reciting');
+    for (const el of this.wordEls.values()) el.classList.remove(...RS_CLASSES, 'rs-cur');
+    if (!l) return;
+    l.listeners.delete(this.onLive);
+    const app = this.app;
+    void stopReciting(l).then(() => {
+      const st = l.state;
+      if (!st || st.status === 'idle' || (!st.tracker.recitedWords && !st.tracker.findings.length)) return;
+      const box = h('div');
+      const paint = () => replaceChildren(box, summaryPanel(app, l, st, paint));
+      paint();
+      openDialog({
+        title: t('rec.summary'),
+        body: box,
+        actions: (close) => [h('button', { type: 'button', 'data-key': 'voice-done', onclick: close }, t('voice.done'))],
+      });
+    });
   }
 
   /** Keeps the screen on while scrolling (supported on most mobile browsers). */

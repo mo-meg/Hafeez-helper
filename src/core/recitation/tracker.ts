@@ -3,8 +3,20 @@ import { align, MATCH_SIM, search, type Alignment, type HypWord } from './align.
 import { similarity } from './normalize.ts';
 import type { RecitationCorpus } from './corpus.ts';
 
-export type WordStatus = 'correct' | 'incorrect' | 'skipped' | 'repeated' | 'uncertain' | 'hesitation' | 'pending';
-export type FindingKind = 'incorrect' | 'skipped' | 'repeated' | 'hesitation';
+/**
+ * What the reciter sees for a word. There is no "checking" state: a word the tracker is still unsure
+ * about shows as correct straight away and turns red only once a mistake is confirmed. Repeating
+ * words (going back to re-recite) is normal and never marked.
+ */
+export type WordStatus = 'correct' | 'incorrect' | 'skipped' | 'hesitation';
+/** Internal state: a suspected mistake waits ('pending') and a not-clearly-heard word is 'uncertain'. */
+type InnerStatus = WordStatus | 'uncertain' | 'pending';
+export type FindingKind = 'incorrect' | 'skipped' | 'hesitation';
+/**
+ * What counts as a wrong word. 'memorization': only words left out or clearly changed (letters and
+ * vowels are not judged). 'vowels': a word must also match letter for letter, vowel for vowel.
+ */
+export type CheckLevel = 'memorization' | 'vowels';
 export type TrackerMode = 'searching' | 'focused';
 
 /** A detected event, keyed by canonical word. Only `incorrect`/`skipped`/`hesitation` are mistakes. */
@@ -29,6 +41,11 @@ export interface RecognisedChunk {
   readonly endMs: number;
   /** Silence immediately before this chunk (ms). */
   readonly silenceBeforeMs: number;
+  /**
+   * The segmenter located these words by searching the text (not near the cursor): the flat index of
+   * the first word. While searching, the tracker takes this place directly instead of searching again.
+   */
+  readonly anchor?: number;
 }
 
 export interface TrackerConfig {
@@ -48,6 +65,19 @@ export interface TrackerConfig {
   readonly unheardGapMs: number;
   /** After losing track, a re-located position at most this many words ahead marks the gap skipped. */
   readonly maxSkipWords: number;
+  /** Lowest sound-unit similarity of a recited word that still counts as correct. */
+  readonly okSim: number;
+}
+
+/**
+ * Similarity needed per check level. In memorization mode a word with a few different sound units
+ * (a vowel, a letter) is still the right word; only a clearly different word is wrong. In vowels
+ * mode the units must match (one stray unit in a long word is tolerated).
+ */
+export const CHECK_OK_SIM: Record<CheckLevel, number> = { memorization: 0.45, vowels: 0.9 };
+
+export function trackerConfigFor(level: CheckLevel): Partial<TrackerConfig> {
+  return { okSim: CHECK_OK_SIM[level] };
 }
 
 /**
@@ -73,15 +103,17 @@ export function stripPreamble(words: readonly HypWord[], corpus: Pick<Recitation
   return out;
 }
 
+/** Tuned for fast recitation (hadr): mistakes confirm sooner, only long pauses count as hesitation. */
 export const DEFAULT_TRACKER_CONFIG: TrackerConfig = {
-  confirmMs: 2500,
+  confirmMs: 1500,
   confirmWords: 2,
-  hesitationMs: 3500,
+  hesitationMs: 6000,
   minConfidence: 0.5,
   lostAfter: 2,
   searchWords: 14,
   unheardGapMs: 650,
   maxSkipWords: 40,
+  okSim: CHECK_OK_SIM.memorization,
 };
 
 interface Pending {
@@ -117,8 +149,6 @@ export class RecitationTracker {
   private lastKnown: number | null = null;
   private buffer: HypWord[] = [];
   private carryHyp: HypWord[] = [];
-  /** Furthest word reached; words before it that are recited again are repetitions. */
-  private highWater = -1;
   /** Last recognised word placed in the text (for gaps that span two recognition steps). */
   private lastHeard: { flat: number; endMs: number } | null = null;
   /** Words matched in the latest focused steps, re-examined when tracking is lost. */
@@ -126,7 +156,7 @@ export class RecitationTracker {
   private takenBack: { flat: number; word: HypWord }[] = [];
   private poorHyp: HypWord[] = [];
   private poor = 0;
-  private readonly status = new Map<number, WordStatus>();
+  private readonly status = new Map<number, InnerStatus>();
   private readonly pending = new Map<number, Pending>();
   private readonly findingKeys = new Set<string>();
   private readonly found: Finding[] = [];
@@ -163,12 +193,16 @@ export class RecitationTracker {
     const at = c === null ? null : Math.min(c, this.corpus.size - 1);
     const w = at === null ? null : this.corpus.words[at];
     let recited = 0;
-    for (const s of this.status.values()) if (s !== 'skipped') recited++;
+    const shown = new Map<number, WordStatus>();
+    for (const [k, s] of this.status) {
+      if (s !== 'skipped') recited++;
+      shown.set(k, s === 'pending' || s === 'uncertain' ? 'correct' : s);
+    }
     return {
       mode: this.mode,
       cursor: c,
       location: w && at !== null ? { ref: this.corpus.ref(at), position: w.position, page: this.corpus.pageAt(at) } : null,
-      status: new Map(this.status),
+      status: shown,
       findings: [...this.found],
       recitedWords: recited,
       selfCorrections: this.selfCorrections,
@@ -179,8 +213,17 @@ export class RecitationTracker {
   private searchStep(chunk: RecognisedChunk): void {
     this.buffer = stripPreamble([...this.buffer, ...chunk.words], this.corpus);
     if (this.buffer.length > this.config.searchWords) this.buffer = this.buffer.slice(-this.config.searchWords);
-    let res = null;
-    if (this.lastKnown !== null) {
+    let res: ReturnType<typeof search> | null = null;
+    if (chunk.anchor !== undefined) {
+      // The segmenter already found the place (e.g. an ayah opening): check it with a fixed start.
+      const words = chunk.words;
+      const a = align(this.corpus, words, chunk.anchor, chunk.anchor + words.length * 2 + 6);
+      if (a.end !== null && a.matches >= Math.max(1, words.length * 0.5)) {
+        this.buffer = [...words];
+        res = { best: { alignment: a, cursor: a.end, score: a.matches }, second: null, confident: true };
+      }
+    }
+    if (!res && this.lastKnown !== null) {
       const page = this.corpus.pageAt(this.lastKnown);
       const win = page === null ? [Math.max(0, this.lastKnown - 150), this.lastKnown + 300] as const : this.corpus.pageSpan(page - 1, page + 2);
       const local = search(this.corpus, this.buffer, { window: win, minRun: 3 });
@@ -203,7 +246,6 @@ export class RecitationTracker {
     }
     this.apply(res.best.alignment, this.buffer, chunk, false);
     this.cursor = res.best.cursor;
-    this.highWater = Math.max(this.highWater, this.cursor);
     this.mode = 'focused';
     this.poor = 0;
     this.buffer = [];
@@ -263,21 +305,13 @@ export class RecitationTracker {
     this.apply(a, hyp, chunk, true);
     this.cursor = a.end as number;
     this.lastKnown = this.cursor;
-    this.highWater = Math.max(this.highWater, this.cursor);
   }
 
   private apply(a: Alignment, hyp: readonly HypWord[], chunk: RecognisedChunk, fixedStart: boolean): void {
-    const cursorBefore = this.cursor ?? -1;
-    let lastWordEnd: number | null = null;
+        let lastWordEnd: number | null = null;
     let seenMatch = false;
     for (const o of a.ops) {
-      if (o.op === 'ins') {
-        const w = hyp[o.hyp];
-        // An extra word equal to one of the last few recited words is a repetition.
-        const prev = this.cursor === null ? -1 : this.recentIndexOf(w?.norm ?? '', a, o.hyp);
-        if (prev >= 0 && this.status.get(prev) === 'correct') this.mark(prev, 'repeated');
-        continue;
-      }
+      if (o.op === 'ins') continue; // extra words (repetition, noise) are never marked
       if (o.op === 'del') {
         if (!seenMatch && !fixedStart) continue;
         const prior = this.status.get(o.ref);
@@ -295,18 +329,17 @@ export class RecitationTracker {
       const prior = this.status.get(o.ref);
       if (w?.endMs !== undefined) this.lastHeard = { flat: o.ref, endMs: w.endMs };
       if (fixedStart && w) this.recent = [...this.recent, { flat: o.ref, word: w }].slice(-4);
-      if (o.op === 'match') {
-        seenMatch = true;
+      if (o.op === 'match' || o.op === 'near') seenMatch = true;
+      const ok = o.sim >= this.config.okSim;
+      const lowConf = w?.confidence !== undefined && w.confidence < this.config.minConfidence;
+      if (ok) {
         if (this.pending.has(o.ref)) {
           this.pending.delete(o.ref);
           this.selfCorrections++;
           this.status.set(o.ref, 'correct');
-        } else if (o.ref < Math.max(cursorBefore, this.highWater) && (prior === 'correct' || prior === 'repeated')) this.mark(o.ref, 'repeated');
-        else if (prior === undefined || prior === 'uncertain' || prior === 'skipped') this.status.set(o.ref, prior === 'skipped' ? 'skipped' : 'correct');
-      } else if (o.op === 'near' || (w?.confidence !== undefined && w.confidence < this.config.minConfidence)) {
-        seenMatch = seenMatch || o.op === 'near';
-        if (o.op === 'near' && o.ref < Math.max(cursorBefore, this.highWater) && (prior === 'correct' || prior === 'repeated')) this.mark(o.ref, 'repeated');
-        else if (prior === undefined || prior === 'pending') {
+        } else if (prior === undefined || prior === 'uncertain') this.status.set(o.ref, 'correct');
+      } else if (lowConf) {
+        if (prior === undefined || prior === 'pending') {
           this.pending.delete(o.ref);
           this.status.set(o.ref, 'uncertain');
         }
@@ -334,16 +367,6 @@ export class RecitationTracker {
     return after.startMs - before.endMs >= this.config.unheardGapMs;
   }
 
-  private recentIndexOf(norm: string, a: Alignment, hypIdx: number): number {
-    let anchor = this.cursor ?? 0;
-    for (const o of a.ops) {
-      if ('hyp' in o && o.hyp >= hypIdx) break;
-      if (o.op !== 'ins') anchor = o.ref + 1;
-    }
-    for (let k = anchor - 1; k >= Math.max(0, anchor - 4); k--) if (this.corpus.words[k]?.norm === norm) return k;
-    return -1;
-  }
-
   private suspect(flat: number, kind: Pending['kind'], heard: string | null, atMs: number): void {
     this.status.set(flat, 'pending');
     this.pending.set(flat, { kind, heard, atMs });
@@ -355,11 +378,6 @@ export class RecitationTracker {
     if (!w || w.position === 1 || prev?.pauseAfter) return; // pausing between ayat or at a waqf sign is normal
     this.record('hesitation', flat, null, atMs);
     if (!this.status.has(flat)) this.status.set(flat, 'hesitation');
-  }
-
-  private mark(flat: number, kind: 'repeated'): void {
-    this.status.set(flat, kind);
-    this.record(kind, flat, null, this.nowMs);
   }
 
   private confirmDue(all: boolean): void {

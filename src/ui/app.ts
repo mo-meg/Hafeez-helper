@@ -66,7 +66,7 @@ export interface AppDeps {
 export type RouteName = 'dashboard' | 'wird' | 'quran' | 'recite' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
 declare const __RECITE_ENABLED__: boolean | undefined;
 /** The Recitation tracker is shown when a Quran Lab web key is configured (see scripts/build.mjs). */
-const RECITE_ENABLED = typeof __RECITE_ENABLED__ === 'boolean' && __RECITE_ENABLED__;
+export const RECITE_ENABLED = typeof __RECITE_ENABLED__ === 'boolean' && __RECITE_ENABLED__;
 const ALL_NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
   { name: 'dashboard', label: 'nav.dashboard', icon: 'dashboard' },
   { name: 'wird', label: 'nav.wird', icon: 'wird' },

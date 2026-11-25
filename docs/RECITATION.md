@@ -12,13 +12,16 @@ microphone ─► src/browser/micCapture.ts        16 kHz mono float, in memory 
            ─► core/recitation/controller.ts     settled words only, once each
            ─► core/recitation/tracker.ts        two-stage matching against the corpus
            ─► core/recitation/mistakeBridge.ts  ─► existing MistakeService (markWord)
-UI: src/ui/views/recite.ts (no recognition logic in the UI)
+UI: src/ui/views/recite.ts, src/ui/components/reciteSession.ts (shared session + summary),
+    src/ui/components/autoScroll.ts ('voice' = reciting focus mode in the Quran section)
 ```
 
 **The model.** TajweedFormer V4 by Quran Lab (65 M parameters, streaming). It is a *sound-unit*
 model: it does not write Arabic words but the units it heard (38 in all), grouped into words at
-the word bar, with timing and confidence, every 320 ms. Licence NPL-1.2: free, never charge for a
-feature it powers, and show that automatic feedback can be wrong (shown on the page).
+the word bar, with timing and confidence, every 320 ms by default; the app opens sessions with the shortest-chunk
+context (160 ms) for fast recitation (hadr). Licence NPL-1.2: free, never charge for a feature it
+powers, and show that automatic feedback can be wrong (shown in the session summary and in
+Settings → Reciting aloud).
 
 **Comparison text.** Because the model writes no Arabic, the tracker compares sound units with
 sound units: the model ships a reference table with the expected units of every ayah
@@ -43,8 +46,20 @@ are segmented, and a word is handed to the tracker once, when the next word has 
 the end of the take. Pause ends the take, resume opens a new one; a take the SDK ends by
 itself (20-minute limit) is continued in a new one. Session time counts fed audio only.
 
-The tracker itself (stage A global search, stage B focused, word states, self-correction window,
-hesitation, saving) is unchanged and engine-agnostic; see the code comments in `tracker.ts`.
+**Fast first lock-on (2026-11-25).** Reciting usually starts at the beginning of an ayah, so the
+segmenter first searches only the openings (first 4 words) of every ayah with unit 4-grams: about
+two words are enough. Lead-in sounds (isti'adha, basmala) are skipped; Al-Fatihah 1:1 is not an
+opening (a basmala before any surah would lock onto it). If no opening fits clearly, the
+whole-Quran search runs as before. The place found is handed to the tracker as `anchor`, which
+takes it without searching again.
+
+**What is shown (2026-11-25).** No "checking" state: a word shows as correct at once and turns red
+only when a mistake is confirmed. Repetitions are never marked. Hesitation only after a 6 s pause.
+Settings → Reciting aloud → What should be checked?: *Memorization* (default; a word counts as
+right at ≥ 45 % sound-unit similarity, so letters and vowels are not judged) or *+ Vowels* (≥ 90 %).
+
+The tracker itself (stage A global search, stage B focused, self-correction window, saving) is
+engine-agnostic; see the code comments in `tracker.ts`.
 
 ## Setup (once)
 

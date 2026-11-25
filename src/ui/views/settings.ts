@@ -7,7 +7,7 @@ import { ANCHOR_SOURCES } from '../../core/quran/anchors.ts';
 import { REPEAT_LIMITS, type CueKind } from '../../core/playlist/sequence.ts';
 import { CUE_SOUNDS, MISTAKE_CUE_SOUNDS, type CueSound, type Preferences } from '../../core/settings/preferences.ts';
 import { exportBackup, parseBackup, restoreBackup, wipePersonalData } from '../../core/storage/backup.ts';
-import type { App } from '../app.ts';
+import { RECITE_ENABLED, type App } from '../app.ts';
 import { confirmDialog } from '../components/dialog.ts';
 import { icon } from '../components/icons.ts';
 import { formatDateTime, h } from '../dom.ts';
@@ -373,6 +373,24 @@ function privacySection(app: App): HTMLElement {
   );
 }
 
+/** Reciting aloud: what the Recitation tracker checks. Memorization is the default. */
+function recitingSection(app: App): HTMLElement {
+  const choice = (value: Preferences['recitationCheck'], label: string, help: string) =>
+    h('label', { class: 'choice' },
+      h('input', { type: 'radio', name: 'recitation-check', value, checked: app.prefs.recitationCheck === value, onchange: () => void app.act(() => app.savePrefs({ ...app.prefs, recitationCheck: value }), t('set.checkSaved')) }),
+      h('span', null, h('strong', null, label), h('br'), h('small', { class: 'muted' }, help)));
+  return section(
+    'reciting',
+    t('set.reciting'),
+    h('p', { class: 'muted' }, t('set.recitingHelp')),
+    h('fieldset', null,
+      h('legend', null, t('set.checkTitle')),
+      choice('memorization', t('set.checkMemo'), t('set.checkMemoHelp')),
+      choice('vowels', t('set.checkVowels'), t('set.checkVowelsHelp'))),
+    h('p', { class: 'muted' }, h('small', null, t('rec.notice'))),
+  );
+}
+
 function settingsNav(sections: {id:string, title:string}[]) {
   return h('nav', { class: 'settings-nav' },
     h('ul', null,
@@ -394,6 +412,7 @@ export function settingsView(app: App): Node {
     {id: 'data', title: tr('set.data')},
     {id: 'audio', title: t('set.audio')},
     {id: 'playback', title: t('set.playback')},
+    ...(RECITE_ENABLED ? [{id: 'reciting', title: t('set.reciting')}] : []),
     {id: 'appearance', title: t('set.appearance')},
     {id: 'reminders', title: t('set.reminders')},
     {id: 'privacy', title: t('set.privacy')},
@@ -416,6 +435,7 @@ export function settingsView(app: App): Node {
       h('summary', null, t('set.playback')),
       playbackSection(app)
     ),
+          RECITE_ENABLED ? recitingSection(app) : null,
           h('details', { open: false },
       h('summary', null, t('set.appearance')),
       appearanceSection(app)
