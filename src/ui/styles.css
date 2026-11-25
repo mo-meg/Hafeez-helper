@@ -675,6 +675,12 @@ body.reciting .quran .w.rs-incorrect { background: var(--mistake-soft); color: v
 body.reciting .quran .w.rs-skipped { background: var(--mistake-soft); text-decoration: line-through 0.08em var(--mistake); }
 body.reciting .quran .w.rs-hesitation { background: var(--amber-soft); }
 body.reciting .quran .w.rs-cur { box-shadow: inset 0 -0.14em 0 var(--accent); }
+/* Reciting with Hafeez on: every word not yet recited is a ghost; it appears once it is heard. */
+body.reciting.hafeez-all .quran .w:not(.rs-correct):not(.rs-incorrect):not(.rs-skipped):not(.rs-hesitation),
+body.reciting.hafeez-all .quran .pause-mark {
+  color: color-mix(in srgb, var(--ink) var(--hafeez-ghost, 7%), transparent); background: none;
+  text-decoration-color: transparent; pointer-events: none;
+}
 .autoscroll-bar.voice [data-key='as-toggle'] svg { fill: none; }
 .autoscroll-bar.voice .as-status { font-size: 1rem; }
 

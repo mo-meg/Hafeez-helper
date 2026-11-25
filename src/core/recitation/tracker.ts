@@ -67,6 +67,13 @@ export interface TrackerConfig {
   readonly maxSkipWords: number;
   /** Lowest sound-unit similarity of a recited word that still counts as correct. */
   readonly okSim: number;
+  /**
+   * Once the place is known the reciter can only move on to the next few ayat (or go back to the
+   * previous one): the text is never searched elsewhere, so a similar passage in another surah
+   * cannot take over. Ayat allowed after the current one / before it.
+   */
+  readonly lockAheadAyat: number;
+  readonly lockBackAyat: number;
 }
 
 /**
@@ -114,6 +121,8 @@ export const DEFAULT_TRACKER_CONFIG: TrackerConfig = {
   unheardGapMs: 650,
   maxSkipWords: 40,
   okSim: CHECK_OK_SIM.memorization,
+  lockAheadAyat: 2,
+  lockBackAyat: 1,
 };
 
 interface Pending {
@@ -177,6 +186,22 @@ export class RecitationTracker {
     this.confirmDue(false);
   }
 
+  /**
+   * Flat word range [from, to) the recitation may continue in, or null while the place was never
+   * found (then the whole Quran is searched). From the start of the previous ayah to the end of
+   * the ayah `lockAheadAyat` after the current one.
+   */
+  bounds(): [number, number] | null {
+    const base = this.mode === 'focused' ? this.cursor : this.lastKnown;
+    if (base === null) return null;
+    const size = this.corpus.size;
+    const ayah = this.corpus.words[Math.min(Math.max(0, base), size - 1)]?.ayahIndex;
+    if (ayah === undefined) return null;
+    const from = this.corpus.ayahStart(Math.max(1, ayah - this.config.lockBackAyat));
+    const to = Math.min(size, this.corpus.ayahStart(ayah + this.config.lockAheadAyat + 1));
+    return [Math.min(from, base), Math.max(to, Math.min(size, base + 1))];
+  }
+
   /** Confirms everything still pending (call when the session ends). */
   finish(): void {
     if (this.carryHyp.length && this.mode === 'focused') {
@@ -214,7 +239,8 @@ export class RecitationTracker {
     this.buffer = stripPreamble([...this.buffer, ...chunk.words], this.corpus);
     if (this.buffer.length > this.config.searchWords) this.buffer = this.buffer.slice(-this.config.searchWords);
     let res: ReturnType<typeof search> | null = null;
-    if (chunk.anchor !== undefined) {
+    const lock = this.bounds();
+    if (chunk.anchor !== undefined && (!lock || (chunk.anchor >= lock[0] && chunk.anchor < lock[1]))) {
       // The segmenter already found the place (e.g. an ayah opening): check it with a fixed start.
       const words = chunk.words;
       const a = align(this.corpus, words, chunk.anchor, chunk.anchor + words.length * 2 + 6);
@@ -222,6 +248,12 @@ export class RecitationTracker {
         this.buffer = [...words];
         res = { best: { alignment: a, cursor: a.end, score: a.matches }, second: null, confident: true };
       }
+    }
+    if (!res && lock) {
+      // The place is known: only the next ayat (or the previous one) are possible, never elsewhere.
+      const local = search(this.corpus, this.buffer, { window: lock, minRun: 2 });
+      if (local.confident) res = local;
+      if (!res) return;
     }
     if (!res && this.lastKnown !== null) {
       const page = this.corpus.pageAt(this.lastKnown);
@@ -246,6 +278,7 @@ export class RecitationTracker {
     }
     this.apply(res.best.alignment, this.buffer, chunk, false);
     this.cursor = res.best.cursor;
+    this.lastKnown = this.cursor;
     this.mode = 'focused';
     this.poor = 0;
     this.buffer = [];
@@ -263,13 +296,15 @@ export class RecitationTracker {
       return;
     }
     const page = this.corpus.pageAt(cursor);
-    const [pFrom, pTo] = page === null ? [0, this.corpus.size] : this.corpus.pageSpan(page, page + 1);
+    const [pFrom, pTo0] = page === null ? [0, this.corpus.size] : this.corpus.pageSpan(page, page + 1);
+    const lockTo = this.bounds()?.[1] ?? this.corpus.size;
+    const pTo = Math.min(pTo0, lockTo);
     let best: { a: Alignment; back: number } | null = null;
     // Try continuing at the cursor, or going back up to 8 words (repetition / self-correction).
     for (let back = 0; back <= 8; back++) {
       const s = cursor - back;
       if (s < 0 || s < pFrom - 8) break;
-      const a = align(this.corpus, hyp, s, Math.min(pTo + 20, s + hyp.length * 2 + 6));
+      const a = align(this.corpus, hyp, s, Math.min(pTo + 20, lockTo, s + hyp.length * 2 + 6));
       const cost = a.cost + back * 0.15;
       if (!best || cost < best.a.cost + best.back * 0.15) best = { a, back };
     }

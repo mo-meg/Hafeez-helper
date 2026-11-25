@@ -87,8 +87,13 @@ const RS_CLASSES = ['rs-correct', 'rs-incorrect', 'rs-skipped', 'rs-hesitation']
  * reader recites what comes next from memory; each line appears as it crosses the middle.
  * 'hint' additionally keeps the first word of every ayah visible.
  */
-export type HafeezMode = 'off' | 'half' | 'hint';
-const HAFEEZ_NEXT: Record<HafeezMode, HafeezMode> = { off: 'half', half: 'hint', hint: 'off' };
+export type HafeezMode = 'off' | 'half' | 'hint' | 'all';
+const HAFEEZ_NEXT: Record<HafeezMode, HafeezMode> = { off: 'half', half: 'hint', hint: 'off', all: 'off' };
+/**
+ * Reciting focus mode has only two states: everything shown, or 'all' — every word not yet
+ * recited is a faint ghost and appears as the tracker hears it (no lower-half boundary).
+ */
+const VOICE_HAFEEZ_KEY = 'voiceHafeez';
 const HIDDEN = 'hz-h';
 
 /** One visual line of Quran text: its vertical centre in document coordinates and its words. */
@@ -255,10 +260,9 @@ export class AutoScrollSession {
     l.listeners.add(session.onLive);
     session.render();
     session.toggleBtn.focus({ preventScroll: true });
-    void app.s.store.settings.get<HafeezMode>(HAFEEZ_KEY).then((v) => {
-      if ((v === 'half' || v === 'hint') && !session.stopped && session.hafeez === 'off') session.setHafeez(v, false);
+    void app.s.store.settings.get<HafeezMode>(VOICE_HAFEEZ_KEY).then((v) => {
+      if (v === 'all' && !session.stopped && session.hafeez === 'off') session.setHafeez('all', false);
     }).catch(() => undefined);
-    void session.lockScreen();
     app.toast(t('voice.hint'));
     void startReciting(app, l).then((ok) => {
       if (!ok && !session.stopped) session.render();
@@ -327,7 +331,6 @@ export class AutoScrollSession {
         if (this.stopped) return;
         this.collectWords();
         this.measure();
-        if (this.hafeez !== 'off') this.hzBuild();
         this.liveUpdate();
       });
       return;
@@ -337,15 +340,26 @@ export class AutoScrollSession {
     if (this.hafeez !== 'off') requestAnimationFrame(() => this.hzBuild());
   }
 
-  /** The eye button: off → lower half hidden → first words shown → off. */
+  /** The eye button: off → lower half hidden → first words shown → off (reciting: off ↔ all hidden). */
   cycleHafeez(): void {
-    this.setHafeez(HAFEEZ_NEXT[this.hafeez], true);
+    this.setHafeez(this.mode === 'voice' ? (this.hafeez === 'off' ? 'all' : 'off') : HAFEEZ_NEXT[this.hafeez], true);
   }
 
   setHafeez(mode: HafeezMode, announce: boolean): void {
     if (this.stopped) return;
+    if (this.mode === 'voice' && mode !== 'off') mode = 'all';
+    if (this.mode !== 'voice' && mode === 'all') mode = 'half';
     this.hafeez = mode;
     const body = document.body.classList;
+    if (this.mode === 'voice') {
+      body.toggle('hafeez-all', mode === 'all');
+      this.render();
+      if (announce) {
+        this.app.toast(t(mode === 'all' ? 'voice.hafeezAllToast' : 'auto.hafeezOffToast'));
+        void this.app.s.store.settings.set(VOICE_HAFEEZ_KEY, mode).catch(() => undefined);
+      }
+      return;
+    }
     body.toggle('hafeez-hide', mode !== 'off');
     body.toggle('hafeez-hint', mode === 'hint');
     this.measure(); // the extra bottom padding changes the scrollable height
@@ -468,7 +482,7 @@ export class AutoScrollSession {
     window.removeEventListener('touchcancel', this.onTouchEnd);
     this.resizeObs?.disconnect();
     this.hzClear();
-    document.body.classList.remove('hafeez-hide', 'hafeez-hint');
+    document.body.classList.remove('hafeez-hide', 'hafeez-hint', 'hafeez-all');
     this.bar.remove();
     document.body.classList.remove(FOCUS_CLASS);
     void this.releaseLock();
@@ -585,7 +599,7 @@ export class AutoScrollSession {
    * position, so revealing costs almost nothing and never competes with the glide.
    */
   private hzBuild(): void {
-    if (this.stopped || this.hafeez === 'off') return;
+    if (this.stopped || this.hafeez === 'off' || this.hafeez === 'all') return;
     for (const l of this.hzLines) for (const el of l.els) el.classList.remove(HIDDEN);
     this.hzLines = [];
     this.hzShown = 0;
@@ -765,12 +779,12 @@ export class AutoScrollSession {
     this.toggleBtn.classList.toggle('is-live', listening && !st.paused && !st.silent);
     replaceChildren(this.toggleBtn, icon(listening ? (st.paused ? 'mic' : 'pause') : 'mic'));
     this.bar.classList.toggle('paused', !listening || st.paused);
-    const hz = this.hafeez === 'off' ? t('auto.hafeezOff') : this.hafeez === 'half' ? t('auto.hafeezHalf') : t('auto.hafeezHint');
+    const hz = this.hafeez === 'all' ? t('voice.hafeezAll') : t('voice.hafeezOff');
     this.hafeezBtn.setAttribute('aria-label', hz);
     this.hafeezBtn.title = hz;
     this.hafeezBtn.setAttribute('aria-pressed', String(this.hafeez !== 'off'));
     this.hafeezBtn.dataset.mode = this.hafeez;
-    replaceChildren(this.hafeezBtn, icon(this.hafeez === 'off' ? 'eye' : this.hafeez === 'half' ? 'eyeOff' : 'eyeHint'));
+    replaceChildren(this.hafeezBtn, icon(this.hafeez === 'all' ? 'eyeOff' : 'eye'));
     for (const [key, disabled] of [['as-prev', !this.portion?.prev], ['as-next', !this.portion?.next]] as const) {
       const b = this.bar.querySelector<HTMLButtonElement>(`[data-key="${key}"]`);
       if (b) b.disabled = disabled;

@@ -174,7 +174,7 @@ export class RecitationController {
     if (settled > ctx.consumed) {
       const pending: HeardUnit[] = u.units.slice(ctx.consumed, settled).map((x) => ({ ...x, startMs: ctx.offsetMs + x.startMs, endMs: ctx.offsetMs + x.endMs }));
       const cursor = this.tracker.mode === 'focused' ? this.tracker.cursor : null;
-      const r = this.segmenter.segment(pending, cursor, u.final);
+      const r = this.segmenter.segment(pending, cursor, u.final, this.tracker.bounds());
       ctx.consumed += r.consumed;
       words = r.words;
       anchor = r.anchor;
