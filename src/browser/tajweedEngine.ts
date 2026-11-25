@@ -32,6 +32,8 @@ export class TajweedFormerEngine implements RecitationEngine {
   separators: ReadonlySet<number> = new Set();
   private readonly key: string;
   private model: TajweedModel | null = null;
+  /** Shortest-chunk context of the model (fast recitation, hadr): results arrive soonest. */
+  private context: string | undefined;
   private loading: Promise<void> | null = null;
 
   constructor(key: string) {
@@ -60,6 +62,7 @@ export class TajweedFormerEngine implements RecitationEngine {
     if (!model.reference) throw new Error('This model build has no reference table, which the tracker needs.');
     if (!model.reference.isDownloaded) await model.reference.fetch();
     this.separators = new Set([model.tokens.wordBar, model.tokens.blank]);
+    this.context = fastestContext(model);
     this.model = model;
   }
 
@@ -72,7 +75,7 @@ export class TajweedFormerEngine implements RecitationEngine {
     if (!this.model) throw new Error('The model is not loaded.');
     const seps = this.separators;
     // Only the heads the tracker reads: recognition (always computed) and confidence.
-    const session: TajweedSession = this.model.session({ sampleRate: 16000, heads: ['log_probs', 'conf'] });
+    const session: TajweedSession = this.model.session({ sampleRate: 16000, heads: ['log_probs', 'conf'], ...(this.context ? { context: this.context } : {}) });
     let finishing = false;
     let speech = false;
     const chunks = (async () => {
@@ -111,6 +114,21 @@ export class TajweedFormerEngine implements RecitationEngine {
       },
     };
   }
+}
+
+/** The context with the shortest chunks (README: 160 ms, default 320 ms); undefined keeps the default. */
+export function fastestContext(model: Pick<TajweedModel, 'contexts' | 'chunkMs'>): string | undefined {
+  let best: { name: string; ms: number } | undefined;
+  for (const name of model.contexts) {
+    let ms: number;
+    try {
+      ms = model.chunkMs(name);
+    } catch {
+      continue;
+    }
+    if (Number.isFinite(ms) && ms > 0 && (!best || ms < best.ms)) best = { name, ms };
+  }
+  return best?.name;
 }
 
 /** Maps the SDK's decoded layer to the engine boundary: a flat unit stream (word bars dropped). */

@@ -7,10 +7,10 @@ import { UnitSegmenter, type HeardUnit } from '../src/core/recitation/segment.ts
 import { mapForms, type RecitationCorpus } from '../src/core/recitation/corpus.ts';
 import { unitKey, wordForms, type AyahUnits, type EngineTake, type HeardUpdate, type RecitationEngine, type TakeEndReason } from '../src/core/recitation/engine.ts';
 import { buildUnitCorpus } from '../src/core/recitation/unitCorpus.ts';
-import { toUpdate } from '../src/browser/tajweedEngine.ts';
+import { fastestContext, toUpdate } from '../src/browser/tajweedEngine.ts';
 import { RecitationMistakeBridge } from '../src/core/recitation/mistakeBridge.ts';
 import { normWord, similarity } from '../src/core/recitation/normalize.ts';
-import { RecitationTracker, stripPreamble, type RecognisedChunk } from '../src/core/recitation/tracker.ts';
+import { RecitationTracker, stripPreamble, trackerConfigFor, type RecognisedChunk } from '../src/core/recitation/tracker.ts';
 import { toIndex } from '../src/core/quran/refs.ts';
 import type { HypWord } from '../src/core/recitation/align.ts';
 import { setup } from './helpers.ts';
@@ -110,7 +110,7 @@ describe('stage B: focused tracking', () => {
     const next = flatWords(base + 6, 3);
     next[1] = { norm: 'ڤڤڤ', raw: 'x' };
     t.push(chunk(next, { durMs: 800 }));
-    assert.equal(t.snapshot().status.get(base + 7), 'pending');
+    assert.equal(t.snapshot().status.get(base + 7), 'correct', 'unsure words show as correct (no "checking" state)');
     assert.equal(t.snapshot().findings.length, 0);
     t.push(chunk(flatWords(base + 9, 4)));
     const s = t.snapshot();
@@ -130,15 +130,15 @@ describe('stage B: focused tracking', () => {
     assert.deepEqual(s.findings.map((f) => [f.kind, f.flat]), [['skipped', base + 8]]);
   });
 
-  it('detects repetition without counting it as a mistake', () => {
+  it('never marks repetition', () => {
     const t = tracker();
     const base = flatOf(30, 10);
     t.push(chunk(flatWords(base, 6)));
     t.push(chunk(flatWords(base + 4, 5))); // goes back two words and continues
     const s = t.snapshot();
-    assert.equal(s.status.get(base + 4), 'repeated');
+    assert.equal(s.status.get(base + 4), 'correct');
     assert.equal(s.status.get(base + 8), 'correct');
-    assert.deepEqual(s.findings.map((f) => f.kind), ['repeated', 'repeated']);
+    assert.equal(s.findings.length, 0);
   });
 
   it('lets the reciter self-correct inside the window', () => {
@@ -148,7 +148,7 @@ describe('stage B: focused tracking', () => {
     const wrong = flatWords(base + 6, 2);
     wrong[1] = { norm: 'ڤڤڤ', raw: 'x' };
     t.push(chunk(wrong, { durMs: 600 }));
-    assert.equal(t.snapshot().status.get(base + 7), 'pending');
+    assert.equal(t.snapshot().status.get(base + 7), 'correct');
     t.push(chunk(flatWords(base + 6, 5), { durMs: 600 }));
     const s = t.snapshot();
     assert.equal(s.status.get(base + 7), 'correct');
@@ -156,7 +156,7 @@ describe('stage B: focused tracking', () => {
     assert.equal(s.findings.filter((f) => f.kind === 'incorrect').length, 0);
   });
 
-  it('treats low-confidence and near-match words as uncertain, never as mistakes', () => {
+  it('never reports low-confidence words as mistakes (shown as correct)', () => {
     const t = tracker();
     const base = flatOf(7, 50);
     t.push(chunk(flatWords(base, 6)));
@@ -166,7 +166,7 @@ describe('stage B: focused tracking', () => {
     t.push(chunk(flatWords(base + 10, 4)));
     t.finish();
     const s = t.snapshot();
-    assert.equal(s.status.get(base + 7), 'uncertain');
+    assert.equal(s.status.get(base + 7), 'correct');
     assert.equal(s.findings.length, 0);
   });
 
@@ -174,13 +174,55 @@ describe('stage B: focused tracking', () => {
     const t = tracker();
     const base = flatOf(15, 20);
     t.push(chunk(flatWords(base, 4)));
-    t.push(chunk(flatWords(base + 4, 2), { silenceBeforeMs: 5000 }));
+    t.push(chunk(flatWords(base + 4, 2), { silenceBeforeMs: 7000 }));
     assert.deepEqual(t.snapshot().findings.map((f) => [f.kind, f.flat]), [['hesitation', base + 4]]);
     const t2 = tracker();
     const a = ayahWords({ surah: 15, ayah: 20 });
     t2.push(chunk(a));
-    t2.push(chunk(ayahWords({ surah: 15, ayah: 21 }), { silenceBeforeMs: 6000 }));
+    t2.push(chunk(ayahWords({ surah: 15, ayah: 21 }), { silenceBeforeMs: 8000 }));
     assert.equal(t2.snapshot().findings.length, 0);
+  });
+
+  it('memorization ignores a changed letter or vowel; + vowels reports it', () => {
+    const base = flatOf(11, 30);
+    const run = (level: 'memorization' | 'vowels') => {
+      clock = 0;
+      const t = new RecitationTracker(recitationCorpus().corpus, trackerConfigFor(level));
+      t.push(chunk(flatWords(base, 6)));
+      const w = flatWords(base + 6, 3);
+      const n = w[1]?.norm ?? '';
+      w[1] = { norm: `${n.slice(0, -1)}${n.endsWith('ب') ? 'ت' : 'ب'}`, raw: 'x' }; // last letter changed
+      t.push(chunk(w));
+      t.push(chunk(flatWords(base + 9, 4)));
+      t.finish();
+      return t.snapshot();
+    };
+    const memo = run('memorization');
+    assert.equal(memo.findings.length, 0);
+    assert.equal(memo.status.get(base + 7), 'correct');
+    const vowels = run('vowels');
+    assert.deepEqual(vowels.findings.map((f) => [f.kind, f.flat]), [['incorrect', base + 7]]);
+  });
+
+  it('memorization still reports a clearly different word', () => {
+    clock = 0;
+    const t = new RecitationTracker(recitationCorpus().corpus, trackerConfigFor('memorization'));
+    const base = flatOf(13, 12);
+    t.push(chunk(flatWords(base, 6)));
+    const w = flatWords(base + 6, 3);
+    w[1] = { norm: 'ڤڤڤڤ', raw: 'x' };
+    t.push(chunk(w));
+    t.push(chunk(flatWords(base + 9, 4)));
+    assert.deepEqual(t.snapshot().findings.map((f) => [f.kind, f.flat]), [['incorrect', base + 7]]);
+  });
+
+  it('takes a place found by the segmenter (anchor) without searching again', () => {
+    const t = tracker();
+    const base = flatOf(16, 40);
+    t.push({ ...chunk(flatWords(base, 1)), anchor: base });
+    assert.equal(t.mode, 'focused');
+    assert.equal(t.cursor, base + 1);
+    assert.equal(t.snapshot().status.get(base), 'correct');
   });
 
   it('falls back to broader matching when recognition becomes unreliable, then re-locks', () => {
@@ -319,6 +361,29 @@ describe('sound-unit comparison text (model reference table)', () => {
     assert.equal(t.cursor, from + 8);
   });
 
+  it('locks on after two words at the start of an ayah (fast first output)', async () => {
+    const uc = await unitCorpus();
+    const from = flatOf(18, 10);
+    const r = new UnitSegmenter(uc).segment(heard(from, 2), null, false);
+    assert.equal(r.anchor, from, 'found among the ayah openings');
+    assert.deepEqual(r.words.map((w) => w.norm), [uc.words[from]?.norm], 'the last word may still grow');
+    const t = new RecitationTracker(uc);
+    t.push({ words: r.words, startMs: 0, endMs: 800, silenceBeforeMs: 0, anchor: r.anchor as number });
+    assert.equal(t.mode, 'focused');
+    assert.equal(t.cursor, from + 1);
+  });
+
+  it('skips a lead-in before the ayah opening, and needs more sounds mid-ayah', async () => {
+    const uc = await unitCorpus();
+    const from = flatOf(22, 7);
+    const noise: HeardUnit[] = [3, 4, 3].map((id) => ({ id, name: 'n', startMs: 0, endMs: 50, confidence: 0.5 }));
+    const r = new UnitSegmenter(uc).segment([...noise, ...heard(from, 3, 300)], null, false);
+    assert.equal(r.anchor, from);
+    assert.equal(r.words.length, 2);
+    const mid = new UnitSegmenter(uc).segment(heard(from + 2, 2), null, false);
+    assert.equal(mid.words.length, 0, 'mid-ayah: the whole-Quran search waits for more sounds');
+  });
+
   it('waits for more sounds when a passage occurs in two places', async () => {
     const uc = await unitCorpus();
     const seg = new UnitSegmenter(uc);
@@ -335,6 +400,12 @@ describe('sound-unit comparison text (model reference table)', () => {
     t.push({ words: r.words, startMs: 0, endMs: 4000, silenceBeforeMs: 0 });
     t.finish();
     assert.deepEqual(t.snapshot().findings.map((f) => [f.kind, f.flat]), [['incorrect', from + 5]]);
+  });
+
+  it('uses the shortest-chunk context for fast recitation', () => {
+    const ms: Record<string, number> = { short: 160, standard: 320, long: 480 };
+    assert.equal(fastestContext({ contexts: ['standard', 'long', 'short'], chunkMs: (c?: string) => ms[c ?? 'standard'] as number }), 'short');
+    assert.equal(fastestContext({ contexts: [], chunkMs: () => 320 }), undefined);
   });
 
   it('maps the SDK decoded layer to a flat unit stream: word bar dropped, settled count kept', () => {

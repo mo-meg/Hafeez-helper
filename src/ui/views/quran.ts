@@ -5,7 +5,7 @@ import { fromIndex, surahEndIndex, surahStartIndex, toIndex } from '../../core/q
 import { surahInfo } from '../../core/quran/surahs.ts';
 import type { AyahRef, DivisionKind, DivisionRange } from '../../core/quran/types.ts';
 import { DEFAULT_PREFERENCES } from '../../core/settings/preferences.ts';
-import type { App } from '../app.ts';
+import { RECITE_ENABLED, type App } from '../app.ts';
 import { AutoScrollSession, type PortionInfo } from '../components/autoScroll.ts';
 import { openDialog } from '../components/dialog.ts';
 import { icon } from '../components/icons.ts';
@@ -388,6 +388,8 @@ function portionInfo(app: App, range: ViewRange): PortionInfo {
   const p = previousPortion(range);
   return {
     label: portionName(range),
+    start: range.start,
+    end: range.end,
     next: n ? { hash: `#/quran?${portionQuery(n)}`, label: nextName(n) } : null,
     prev: p ? { hash: `#/quran?${portionQuery(p)}`, label: nextName(p) } : null,
   };
@@ -442,6 +444,19 @@ function autoScrollButton(app: App, range: ViewRange): HTMLElement {
   );
 }
 
+/** Floating mic button: reciting focus mode, the page follows the voice and colours the words. */
+function reciteButton(app: App, range: ViewRange): HTMLElement {
+  return h(
+    'button',
+    {
+      type: 'button', class: 'autoscroll-fab recite-fab', 'data-key': 'recite-start',
+      'aria-label': t('voice.start'), title: t('voice.start'), disabled: !app.deps.quranLabKey,
+      onclick: () => AutoScrollSession.startVoice(app, portionInfo(app, range)),
+    },
+    icon('mic'),
+  );
+}
+
 export function quranView(app: App): Node {
   const { range, problem } = resolveRange(app);
   const maps = mistakeMaps(app.data.mistakes);
@@ -488,5 +503,6 @@ export function quranView(app: App): Node {
       : null,
     h('div', { class: 'reader-layout' }, h('div', null, stepLinks(app, range), legend(), mushaf), divisionPanel(app, range)),
     hasText ? autoScrollButton(app, range) : null,
+    hasText && RECITE_ENABLED ? reciteButton(app, range) : null,
   );
 }

@@ -74,6 +74,8 @@ export const PreferencesSchema = z.object({
   language: z.enum(['ar', 'en']),
   /** Week or month revision goal; null until the user sets one. */
   periodPlan: PeriodPlanSchema.nullable(),
+  /** Reciting aloud: what the Recitation tracker checks (words only, or also letters and vowels). */
+  recitationCheck: z.enum(['memorization', 'vowels']),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
@@ -108,6 +110,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   reminder: { enabled: false, time: '07:00' },
   language: 'ar',
   periodPlan: null,
+  recitationCheck: 'memorization',
 };
 
 /** Merges stored (possibly older/partial) preferences onto defaults; invalid fields fall back. */

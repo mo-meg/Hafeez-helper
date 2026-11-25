@@ -21,6 +21,9 @@ import { AuthClient, SessionManager, type AuthSession } from '../src/core/sync/a
 import { SupabaseRecords, SyncEngine } from '../src/core/sync/syncEngine.ts';
 import type { AccountController } from '../src/ui/auth/account.ts';
 import { showAuthScreen } from '../src/ui/auth/authView.ts';
+import { AutoScrollSession } from '../src/ui/components/autoScroll.ts';
+import { ensureLive } from '../src/ui/components/reciteSession.ts';
+import type { WordStatus } from '../src/core/recitation/tracker.ts';
 
 declare const SHOWCASE: string | undefined;
 declare const SHOWCASE_LANG: string | undefined;
@@ -1051,6 +1054,25 @@ async function run() {
     app.autoScroll?.pause();
     app.autoScroll?.setSpeed(15);
     window.scrollTo(0, 0);
+  } else if (showcase === 'recite-voice' || showcase === 'recite-page') {
+    // Screens only (no model in the harness): a session state is injected after the start fails for want of a key.
+    if (showcase === 'recite-voice') {
+      await go('#/quran?hizb=5');
+      window.scrollTo(0, 0);
+      AutoScrollSession.startVoice(app, { label: 'Hizb 5', next: null, prev: null });
+    } else await go('#/recite');
+    const l = ensureLive(app);
+    if (l) {
+      await waitFor(() => !l.preparing || null, 'start settles', 4000).catch(() => undefined);
+      document.querySelector('.toast-region')?.replaceChildren();
+      const from = l.corpus.ayahStart(256);
+      const status = new Map<number, WordStatus>();
+      for (let k = from; k < from + 14; k++) status.set(k, k === from + 6 ? 'incorrect' : k === from + 10 ? 'skipped' : 'correct');
+      l.state = { status: 'listening', error: null, silent: false, paused: false, heard: '', progress: null,
+        tracker: { mode: 'focused', cursor: from + 14, location: null, status, findings: [], recitedWords: 13, selfCorrections: 0 } };
+      l.preparing = false;
+      for (const fn of l.listeners) fn();
+    }
   } else if (showcase) await go(showcase);
   else await go('#/dashboard');
   report(storeKind);
