@@ -121,7 +121,7 @@ export function statusLabel(l: RecitationLive): string {
     return l.progress !== null && l.progress < 1 ? t('rec.loadingPct', { pct: fmtNum(Math.floor(l.progress * 100)) }) : t('rec.status.loading');
   }
   if (!st) return t('rec.status.idle');
-  if (st.status === 'listening' && st.paused) return t('rec.status.paused');
+  if (st.status === 'listening' && st.paused) return st.autoPaused ? t('rec.status.autoPaused') : t('rec.status.paused');
   if (st.status === 'listening') return st.silent ? t('rec.status.waiting') : t('rec.status.listening');
   return t(`rec.status.${st.status}` as MessageKey);
 }
@@ -168,6 +168,7 @@ export async function startReciting(app: App, l: RecitationLive): Promise<boolea
   const controller = new RecitationController({
     engine: l.engine,
     tracker,
+    timing: { promptMs: app.prefs.recitationPromptSec * 1000, autoPauseMs: app.prefs.recitationAutoPauseSec * 1000 },
     onUpdate: (s) => {
       l.state = s;
       if (s.status === 'error') {

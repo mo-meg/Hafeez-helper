@@ -299,8 +299,16 @@ export class UnitSegmenter {
       if (g && g.word === w) g.to = i + 1;
       else groups.push({ word: w, from: i, to: i + 1 });
     }
-    // The last word may still be going on: keep it for the next call unless the take ended.
-    const done = final ? groups : groups.slice(0, -1);
+    // The last word may still be going on: keep it for the next call unless the take ended or its
+    // units already reach the word's last expected unit (then it is shown at once, not only when
+    // the next word begins — the reciter may be stuck right after it).
+    const last = groups[groups.length - 1];
+    let complete = false;
+    if (!final && last) {
+      const lastUnit = (this.wordStart[last.word + 1] as number) - 1;
+      for (let i = last.to - 1; i >= last.from && !complete; i--) complete = p.map[i] === lastUnit;
+    }
+    const done = final || complete ? groups : groups.slice(0, -1);
     const words = done.map((g) => {
       const us = units.slice(g.from, g.to);
       const confs = us.map((u) => u.confidence).filter((c): c is number => c !== null);

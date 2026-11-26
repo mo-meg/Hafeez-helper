@@ -432,11 +432,13 @@ describe('sound-unit comparison text (model reference table)', () => {
     const from = flatOf(18, 10);
     const r = new UnitSegmenter(uc).segment(heard(from, 2), null, false);
     assert.equal(r.anchor, from, 'found among the ayah openings');
-    assert.deepEqual(r.words.map((w) => w.norm), [uc.words[from]?.norm], 'the last word may still grow');
+    assert.deepEqual(r.words.map((w) => w.norm), [uc.words[from]?.norm, uc.words[from + 1]?.norm], 'a complete last word is handed over at once');
     const t = new RecitationTracker(uc);
     t.push({ words: r.words, startMs: 0, endMs: 800, silenceBeforeMs: 0, anchor: r.anchor as number });
     assert.equal(t.mode, 'focused');
-    assert.equal(t.cursor, from + 1);
+    assert.equal(t.cursor, from + 2);
+    const part = new UnitSegmenter(uc).segment(heard(from, 3).slice(0, -1), null, false);
+    assert.equal(part.words.length, 2, 'an unfinished last word may still grow');
   });
 
   it('skips a lead-in before the ayah opening, and needs more sounds mid-ayah', async () => {
@@ -445,7 +447,7 @@ describe('sound-unit comparison text (model reference table)', () => {
     const noise: HeardUnit[] = [3, 4, 3].map((id) => ({ id, name: 'n', startMs: 0, endMs: 50, confidence: 0.5 }));
     const r = new UnitSegmenter(uc).segment([...noise, ...heard(from, 3, 300)], null, false);
     assert.equal(r.anchor, from);
-    assert.equal(r.words.length, 2);
+    assert.equal(r.words.length, 3);
     const mid = new UnitSegmenter(uc).segment(heard(from + 2, 2), null, false);
     assert.equal(mid.words.length, 0, 'mid-ayah: the whole-Quran search waits for more sounds');
   });
@@ -503,9 +505,11 @@ describe('controller with a fake streaming model', () => {
     const tk = engine.takes[0] as FakeTake;
     assert.equal(tk.pushed, MODEL_RATE);
     tk.update({ units: heard(base(), 6) });
-    assert.equal(c.state().tracker.cursor, base() + 5, 'the last word can still grow');
-    tk.update({ units: heard(base(), 10), settledUnits: 6 * unitsPer });
-    assert.ok((c.state().tracker.cursor ?? 0) <= base() + 6, 'unsettled words are not handed over');
+    assert.equal(c.state().tracker.cursor, base() + 6, 'a complete word is shown at once');
+    tk.update({ units: heard(base(), 10), settledUnits: 7 * unitsPer - 1 });
+    assert.equal(c.state().tracker.cursor, base() + 6, 'an unfinished or unsettled word is not handed over');
+    tk.update({ units: heard(base(), 10), settledUnits: 7 * unitsPer });
+    assert.equal(c.state().tracker.cursor, base() + 7, 'the single next word is placed without waiting for another');
     assert.equal(c.state().silent, false);
     assert.ok(c.state().heard.length > 0);
     await c.stop();
@@ -513,6 +517,34 @@ describe('controller with a fake streaming model', () => {
     assert.equal(c.state().status, 'stopped');
     assert.equal(c.state().tracker.cursor, base() + 10);
     assert.equal(c.state().tracker.findings.length, 0, 'nothing counted twice');
+  });
+
+  it('shows a forgotten word after the reciter is stuck, waits for it, and pauses after a long silence', async () => {
+    const engine = fakeEngine();
+    const c = new RecitationController({ engine, tracker: new RecitationTracker(await unitCorpus()), onUpdate: () => {}, timing: { promptMs: 3000, autoPauseMs: 20000 } });
+    await c.start();
+    c.feed(silence(1000));
+    const tk = engine.takes[0] as FakeTake;
+    tk.update({ units: heard(base(), 6) });
+    assert.equal(c.state().tracker.cursor, base() + 6);
+    c.feed(silence(2000));
+    assert.equal(c.state().tracker.status.has(base() + 6), false, 'not yet');
+    c.feed(silence(1500));
+    assert.equal(c.state().tracker.status.get(base() + 6), 'forgotten', 'shown after 3 s');
+    assert.deepEqual(c.state().tracker.findings.map((f) => [f.kind, f.flat]), [['forgotten', base() + 6]]);
+    c.feed(silence(4000));
+    assert.equal(c.state().tracker.findings.length, 1, 'the next word is not shown while waiting for this one');
+    tk.update({ units: heard(base(), 7) });
+    assert.equal(c.state().tracker.cursor, base() + 7, 'tracking goes on when it is recited');
+    assert.equal(c.state().tracker.status.get(base() + 6), 'forgotten');
+    assert.equal(c.state().tracker.findings.length, 1, 'no extra hesitation record');
+    c.feed(silence(21000));
+    assert.equal(c.state().paused, true, 'paused after a long silence');
+    assert.equal(c.state().autoPaused, true);
+    c.resume();
+    assert.equal(c.state().paused, false);
+    assert.equal(c.state().autoPaused, false);
+    await c.stop();
   });
 
   it('reports model loading errors', async () => {
@@ -530,7 +562,7 @@ describe('controller with a fake streaming model', () => {
     (engine.takes[0] as FakeTake).end('ended');
     assert.equal(engine.takes.length, 2);
     (engine.takes[1] as FakeTake).update({ units: heard(base() + 6, 4) });
-    assert.equal(c.state().tracker.cursor, base() + 9);
+    assert.equal(c.state().tracker.cursor, base() + 10);
     (engine.takes[1] as FakeTake).end('error', new Error('engine_failed'));
     assert.equal(c.state().error?.kind, 'engine');
     c.feed(silence(500));

@@ -8,10 +8,11 @@ import type { RecitationCorpus } from './corpus.ts';
  * about shows as correct straight away and turns red only once a mistake is confirmed. Repeating
  * words (going back to re-recite) is normal and never marked.
  */
-export type WordStatus = 'correct' | 'incorrect' | 'skipped' | 'hesitation';
+export type WordStatus = 'correct' | 'incorrect' | 'skipped' | 'hesitation' | 'forgotten';
 /** Internal state: a suspected mistake waits ('pending') and a not-clearly-heard word is 'uncertain'. */
 type InnerStatus = WordStatus | 'uncertain' | 'pending';
-export type FindingKind = 'incorrect' | 'skipped' | 'hesitation';
+/** 'forgotten': the reciter was stuck before this word and it was shown to them (see prompt()). */
+export type FindingKind = 'incorrect' | 'skipped' | 'hesitation' | 'forgotten';
 /**
  * What counts as a wrong word. 'memorization': only words left out or clearly changed (letters and
  * vowels are not judged). 'vowels': a word must also match letter for letter, vowel for vowel.
@@ -19,7 +20,7 @@ export type FindingKind = 'incorrect' | 'skipped' | 'hesitation';
 export type CheckLevel = 'memorization' | 'vowels';
 export type TrackerMode = 'searching' | 'focused';
 
-/** A detected event, keyed by canonical word. Only `incorrect`/`skipped`/`hesitation` are mistakes. */
+/** A detected event, keyed by canonical word. */
 export interface Finding {
   readonly key: string;
   readonly kind: FindingKind;
@@ -332,7 +333,22 @@ export class RecitationTracker {
     const hyp = carried ? [...this.carryHyp, ...chunk.words] : chunk.words;
     this.carryHyp = [];
     if (hyp.length < 2 && !last) {
-      this.carryHyp = [...hyp]; // one word alone is too ambiguous to place (continue vs. go back)
+      // One word alone is ambiguous (continue vs. go back) — unless it clearly is the expected next
+      // word: then it is shown at once instead of only when the following word is heard.
+      const w = hyp[0];
+      const next = this.corpus.words[cursor];
+      if (w && next && cursor < (this.bounds()?.[1] ?? this.corpus.size) && similarity(w.norm, next.norm) >= MATCH_SIM) {
+        const a = align(this.corpus, hyp, cursor, cursor + 1);
+        if (a.end === cursor + 1 && a.matches >= 1) {
+          this.poor = 0;
+          if (!carried && chunk.silenceBeforeMs >= this.config.hesitationMs) this.hesitation(cursor, chunk.startMs);
+          this.apply(a, hyp, chunk, true);
+          this.cursor = cursor + 1;
+          this.lastKnown = this.cursor;
+          return;
+        }
+      }
+      this.carryHyp = [...hyp];
       return;
     }
     const page = this.corpus.pageAt(cursor);
@@ -447,7 +463,21 @@ export class RecitationTracker {
     this.pending.set(flat, { kind, heard, atMs });
   }
 
+  /**
+   * The reciter is stuck before the next expected word: it is shown to them and recorded as
+   * forgotten. The cursor stays on it, so tracking goes on when they recite it. Returns the word,
+   * or null when nothing is expected (not following yet, end of text, or already marked).
+   */
+  prompt(atMs: number): number | null {
+    const flat = this.mode === 'focused' ? this.cursor : null;
+    if (flat === null || flat >= this.corpus.size || this.status.has(flat) || this.pending.has(flat)) return null;
+    this.status.set(flat, 'forgotten');
+    this.record('forgotten', flat, null, atMs);
+    return flat;
+  }
+
   private hesitation(flat: number, atMs: number): void {
+    if (this.status.get(flat) === 'forgotten') return; // already shown and recorded
     const w = this.corpus.words[flat];
     const prev = this.corpus.words[flat - 1];
     if (!w || w.position === 1 || prev?.pauseAfter) return; // pausing between ayat or at a waqf sign is normal

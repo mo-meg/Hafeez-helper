@@ -4,14 +4,15 @@ import type { MarkResult, MistakeService } from '../mistakes/mistakeService.ts';
 import type { Finding, FindingKind } from './tracker.ts';
 
 /** Kinds offered for saving by default. */
-export const DEFAULT_SAVE_KINDS: readonly FindingKind[] = ['incorrect', 'skipped', 'hesitation'];
+export const DEFAULT_SAVE_KINDS: readonly FindingKind[] = ['incorrect', 'skipped', 'hesitation', 'forgotten'];
 
 export function categoryFor(f: Finding): MistakeCategory {
-  if ((f.kind === 'incorrect' || f.kind === 'skipped') && suggestedCategory(f.position) === 'ayah_transition') return 'ayah_transition';
+  if ((f.kind === 'incorrect' || f.kind === 'skipped' || f.kind === 'forgotten') && suggestedCategory(f.position) === 'ayah_transition') return 'ayah_transition';
   switch (f.kind) {
     case 'incorrect':
       return 'incorrect_word';
     case 'skipped':
+    case 'forgotten':
       return 'forgotten';
     case 'hesitation':
       return 'hesitation';
