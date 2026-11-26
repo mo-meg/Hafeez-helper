@@ -1,4 +1,5 @@
 import {
+  CLEAN_DAYS_TO_RESOLVE,
   isUnresolved,
   type DifficultyOverride,
   type Mistake,
@@ -142,6 +143,7 @@ export class MistakeService {
         lastStreakSessionId: null,
         reopenCount: reopening ? existing.reopenCount + 1 : existing.reopenCount,
         resolvedAt: reopening ? null : existing.resolvedAt,
+        cleanDays: [],
         updatedAt: now,
         schedule: { ...existing.schedule, intervalDays: this.scheduler.ladderDays[0] ?? 1, nextReviewAt: now, manualNextReviewAt: null },
       };
@@ -215,6 +217,7 @@ export class MistakeService {
       updatedAt: now,
       resolvedAt: reopening ? null : m.resolvedAt,
       reopenCount: reopening ? m.reopenCount + 1 : m.reopenCount,
+      ...(reopening ? { cleanDays: [] } : {}),
       ...(reopening ? { schedule: { ...m.schedule, nextReviewAt: now } } : {}),
     };
     await this.store.mistakes.put(updated);
@@ -229,6 +232,27 @@ export class MistakeService {
     const updated: Mistake = { ...m, status: 'resolved', resolvedAt: now, updatedAt: now };
     await this.store.mistakes.put(updated);
     await this.logEvent(id, 'resolved', { from: m.status, to: 'resolved' });
+    return updated;
+  }
+
+  /**
+   * The recitation tracker heard this word recited correctly on `day` (local YYYY-MM-DD).
+   * The first such day turns an unresolved mark "improved" (yellow); correct recitation on
+   * CLEAN_DAYS_TO_RESOLVE distinct days resolves it (green). Counted once per day; resolved or
+   * ayah-level marks are left alone. Returns the updated mistake, or null when nothing changed.
+   */
+  async recordCleanRecitation(id: string, day: string): Promise<Mistake | null> {
+    const m = await this.get(id);
+    if (!m.word || !isUnresolved(m.status)) return null;
+    const days = m.cleanDays ?? [];
+    if (days.includes(day)) return null;
+    const cleanDays = [...days, day];
+    const now = this.clock.now().toISOString();
+    const resolveNow = cleanDays.length >= CLEAN_DAYS_TO_RESOLVE;
+    const status: MistakeStatus = resolveNow ? 'resolved' : 'improved';
+    const updated: Mistake = { ...m, status, cleanDays, updatedAt: now, ...(resolveNow ? { resolvedAt: now } : {}) };
+    await this.store.mistakes.put(updated);
+    if (m.status !== status) await this.logEvent(id, resolveNow ? 'resolved' : 'status_changed', { from: m.status, to: status, detail: `recitation:${cleanDays.length}d` });
     return updated;
   }
 
@@ -291,6 +315,7 @@ export class MistakeService {
         reopenCount: res.reopenCount,
         resolvedAt: resolveNow ? atIso : res.status === 'resolved' ? m.resolvedAt : null,
         lastStreakSessionId: res.streakCounted ? ctx.sessionId : res.successStreak === 0 ? null : m.lastStreakSessionId,
+        ...(outcome === 'mistake_again' || outcome === 'needed_prompt' ? { cleanDays: [] } : {}),
         reviewCount: m.reviewCount + 1,
         lastReviewedAt: atIso,
         updatedAt: atIso,

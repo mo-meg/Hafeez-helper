@@ -158,3 +158,38 @@ describe('filtering mistakes', () => {
     assert.equal(filterMistakes(all, { minConfidence: 3 }, index).length, 1);
   });
 });
+
+describe('correct recitation (recitation tracker)', () => {
+  it('turns a mark yellow on the first day and resolves it on the third distinct day', async () => {
+    const { mistakes } = setup();
+    const { mistake } = await mistakes.markWord({ surah: 2, ayah: 255 }, word(3), { category: 'forgotten' });
+    const a = await mistakes.recordCleanRecitation(mistake.id, '2026-03-01');
+    assert.equal(a?.status, 'improved');
+    assert.equal(await mistakes.recordCleanRecitation(mistake.id, '2026-03-01'), null, 'once per day');
+    const b = await mistakes.recordCleanRecitation(mistake.id, '2026-03-04');
+    assert.equal(b?.status, 'improved');
+    const c = await mistakes.recordCleanRecitation(mistake.id, '2026-03-09');
+    assert.equal(c?.status, 'resolved');
+    assert.ok(c?.resolvedAt);
+    assert.equal(await mistakes.recordCleanRecitation(mistake.id, '2026-03-10'), null, 'resolved marks are left alone');
+  });
+
+  it('starts counting again when the word is marked again', async () => {
+    const { mistakes } = setup();
+    const { mistake } = await mistakes.markWord({ surah: 2, ayah: 255 }, word(3), { category: 'forgotten' });
+    await mistakes.recordCleanRecitation(mistake.id, '2026-03-01');
+    await mistakes.recordCleanRecitation(mistake.id, '2026-03-02');
+    const again = await mistakes.markWord({ surah: 2, ayah: 255 }, word(3), { category: 'forgotten' });
+    assert.equal(again.mistake.status, 'needs_practice');
+    assert.deepEqual(again.mistake.cleanDays, []);
+    const d = await mistakes.recordCleanRecitation(mistake.id, '2026-03-03');
+    assert.equal(d?.status, 'improved');
+    assert.deepEqual(d?.cleanDays, ['2026-03-03']);
+  });
+
+  it('ignores ayah-level marks', async () => {
+    const { mistakes } = setup();
+    const { mistake } = await mistakes.markAyah({ surah: 3, ayah: 7 }, { category: 'similar_ayah' });
+    assert.equal(await mistakes.recordCleanRecitation(mistake.id, '2026-03-01'), null);
+  });
+});

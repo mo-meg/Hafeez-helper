@@ -3,7 +3,8 @@ import type { MistakeStatus, RecallOutcome } from '../model.ts';
 /**
  * Documented review policy (see docs/SCORING_AND_SCHEDULING.md).
  * - Listening to audio never changes a status. Only an explicit recall outcome does.
- * - No outcome ever sets "resolved"; resolution is always an explicit user action.
+ * - No outcome ever sets "resolved"; resolution is an explicit user action (the one automatic
+ *   exception is MistakeService.recordCleanRecitation: correct recitation on 3 distinct days).
  * - A success streak only grows across DISTINCT sessions (repeating within one sitting
  *   is not evidence of retention).
  */

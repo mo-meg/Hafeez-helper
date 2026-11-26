@@ -49,6 +49,9 @@ export function isTransitionMistake(m: { category: MistakeCategory; word: { posi
   return m.category === 'ayah_transition' || m.word === null || m.word.position === 1;
 }
 
+/** Distinct days of correct recitation (recitation tracker) that resolve a word mistake. */
+export const CLEAN_DAYS_TO_RESOLVE = 3;
+
 /** Unresolved = still part of mistake revision playlists by default. */
 export function isUnresolved(status: MistakeStatus): boolean {
   return status !== 'resolved';
@@ -114,6 +117,12 @@ export interface Mistake {
   /** Session in which the streak last grew (streak grows at most once per session). */
   readonly lastStreakSessionId: string | null;
   readonly reopenCount: number;
+  /**
+   * Local days (YYYY-MM-DD) on which the recitation tracker heard this word recited correctly
+   * since it was last marked. One day turns the mark "improved" (yellow); CLEAN_DAYS_TO_RESOLVE
+   * distinct days resolve it (green). Cleared whenever the mistake is marked again or reopened.
+   */
+  readonly cleanDays?: readonly string[];
   readonly schedule: MistakeSchedule;
   /** Present only on clearly-labelled demo records. */
   readonly demo?: boolean;

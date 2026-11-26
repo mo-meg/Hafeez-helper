@@ -27,7 +27,6 @@ import { dashboardView } from './views/dashboard.ts';
 import { mistakesView } from './views/mistakes.ts';
 import { progressView } from './views/progress.ts';
 import { quranView } from './views/quran.ts';
-import { reciteView } from './views/recite.ts';
 import { revisionView } from './views/revision.ts';
 import { sessionView } from './views/session.ts';
 import { settingsView } from './views/settings.ts';
@@ -63,22 +62,20 @@ export interface AppDeps {
   readonly enableReminders?: boolean;
 }
 
-export type RouteName = 'dashboard' | 'wird' | 'quran' | 'recite' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
+export type RouteName = 'dashboard' | 'wird' | 'quran' | 'revision' | 'mistakes' | 'test' | 'session' | 'progress' | 'settings';
 declare const __RECITE_ENABLED__: boolean | undefined;
-/** The Recitation tracker is shown when a Quran Lab web key is configured (see scripts/build.mjs). */
+/** Reciting focus mode (Quran section mic button) is offered when a Quran Lab web key is configured (see scripts/build.mjs). */
 export const RECITE_ENABLED = typeof __RECITE_ENABLED__ === 'boolean' && __RECITE_ENABLED__;
-const ALL_NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
+const NAV: ReadonlyArray<{ name: RouteName; label: MessageKey; icon: string }> = [
   { name: 'dashboard', label: 'nav.dashboard', icon: 'dashboard' },
   { name: 'wird', label: 'nav.wird', icon: 'wird' },
   { name: 'quran', label: 'nav.quran', icon: 'quran' },
-  { name: 'recite', label: 'nav.recite', icon: 'mic' },
   { name: 'revision', label: 'nav.revision', icon: 'revision' },
   { name: 'mistakes', label: 'nav.mistakes', icon: 'mistakes' },
   { name: 'test', label: 'nav.test', icon: 'test' },
   { name: 'progress', label: 'nav.progress', icon: 'progress' },
   { name: 'settings', label: 'nav.settings', icon: 'settings' },
 ];
-const NAV = ALL_NAV.filter((n) => RECITE_ENABLED || n.name !== 'recite');
 
 /** A session title that is computed at render time, so it follows the interface language. */
 export type Title = () => string;
@@ -345,8 +342,6 @@ export class App {
         return wirdView(this);
       case 'quran':
         return quranView(this);
-      case 'recite':
-        return reciteView(this);
       case 'revision':
         return revisionView(this);
       case 'mistakes':

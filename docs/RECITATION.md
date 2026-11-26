@@ -1,7 +1,14 @@
 # Recitation tracker
 
-Status: engine replaced 2026-11-24 (the local NeMo server and the shared tunnel are gone). Route
-`#/recite` ("Recitation tracker" / «متابعة التلاوة»).
+Status: engine replaced 2026-11-24 (the local NeMo server and the shared tunnel are gone). Since
+2026-11-26 there is no separate page any more: the tracker runs only in the Quran section's reciting
+focus mode (floating mic button).
+
+Word marks while reciting (and in auto scroll / Hafeez mode): one tap = mistake (also overrides the
+tracker's colour), double tap = every mark cleared (saved mistake deleted, tracker colour removed).
+A saved word mistake the tracker hears recited correctly (clearly heard, reciter ≥ 6 words past it,
+or at Exit) turns yellow (`improved`); correct recitation on 3 distinct days (`Mistake.cleanDays`,
+`CLEAN_DAYS_TO_RESOLVE`) resolves it (green). Marking it again resets the count.
 
 ## How it works
 
@@ -12,7 +19,7 @@ microphone ─► src/browser/micCapture.ts        16 kHz mono float, in memory 
            ─► core/recitation/controller.ts     settled words only, once each
            ─► core/recitation/tracker.ts        two-stage matching against the corpus
            ─► core/recitation/mistakeBridge.ts  ─► existing MistakeService (markWord)
-UI: src/ui/views/recite.ts, src/ui/components/reciteSession.ts (shared session + summary),
+UI: src/ui/components/reciteSession.ts (session + summary), src/ui/components/wordMark.ts,
     src/ui/components/autoScroll.ts ('voice' = reciting focus mode in the Quran section)
 ```
 
@@ -96,7 +103,7 @@ In 4.x every learner may be asked by the SDK's own sheet (never right after inst
 fake reference table, mapping of the SDK's decoded layer (`toUpdate`), and the controller with a fake
 streaming engine (settled words once, end of take, engine take end/error, pause/resume, microphone and
 model failures). **Not verified yet with the real model**: this needs a web key, which the sandbox
-does not have. First real check: open `#/recite`, start, recite e.g. Al-Kahf 18:10 and confirm the
+does not have. First real check: open the Quran section, press the mic button, recite e.g. Al-Kahf 18:10 and confirm the
 location appears; check the console for mismatched ayat.
 
 ## Data note

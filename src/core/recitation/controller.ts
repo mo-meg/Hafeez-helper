@@ -3,7 +3,7 @@ import { MODEL_RATE } from './audio.ts';
 import type { RecitationCorpus } from './corpus.ts';
 import type { EngineTake, HeardUpdate, LoadProgress, RecitationEngine, TakeEndReason } from './engine.ts';
 import { UnitSegmenter, type HeardUnit } from './segment.ts';
-import type { RecitationTracker, TrackerSnapshot } from './tracker.ts';
+import type { RecitationTracker, TrackerSnapshot, WordStatus } from './tracker.ts';
 
 export type RecitationStatus = 'idle' | 'loading' | 'listening' | 'stopping' | 'stopped' | 'error';
 export type RecitationErrorKind = 'model' | 'engine' | 'microphone';
@@ -93,6 +93,12 @@ export class RecitationController {
     this.openTake();
     this.set('listening');
     return true;
+  }
+
+  /** User correction of one word (see RecitationTracker.override); repaints at once. */
+  overrideWord(flat: number, status: WordStatus | null): void {
+    this.tracker.override(flat, status);
+    this.emit();
   }
 
   /** Feeds 16 kHz mono samples. */

@@ -28,10 +28,12 @@ No account, no tracking, and no AI service required. Your data stays on your dev
   Navigate by surah, ayah, juz, hizb, quarter and page. A division panel
   shows the exact start and end of the portion, its quarters with their starting
   ayat, your reading position, and how many mistakes are marked, unresolved and resolved there.
-* **Recitation tracker** (optional, local AI): recite from memory and the app finds your place
+* **Recitation tracker** (optional, local AI, mic button in the Quran section): recite from memory and the app finds your place
   in the whole Quran, follows you word by word on the mushaf page, and flags different, skipped
   or repeated words and long pauses. A short confirmation window lets you correct yourself; words
   not heard clearly are never counted as mistakes. You choose which findings to save as mistakes.
+  Tap a word to mark a mistake, double-tap to clear it. A saved mistake you then recite correctly
+  turns yellow, and green (resolved) once recited correctly on three separate days.
   Speech recognition runs in the browser with Quran Lab's TajweedFormer
   (`@quran-lab/tajweedformer` 4, loaded from Quran Lab; no server to run). It needs a free Quran Lab web key
   (`HAFEEZ_QURANLAB_KEY`) and downloads the model once (~57 MB). See
