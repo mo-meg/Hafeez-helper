@@ -139,6 +139,28 @@ describe('stage B: focused tracking', () => {
     assert.equal(s.findings[0]?.tokenText, recitationCorpus().corpus.words[base + 7]?.text, 'snapshot is the canonical token');
   });
 
+  it('user corrections: a cleared word loses its status and finding; heardCorrect lists clear hits only', () => {
+    const t = tracker();
+    const base = flatOf(10, 20);
+    t.push(chunk(flatWords(base, 6)));
+    const next = flatWords(base + 6, 3);
+    next[1] = { norm: 'ڤڤڤ', raw: 'x' };
+    t.push(chunk(next, { durMs: 800 }));
+    t.push(chunk(flatWords(base + 9, 4)));
+    let s = t.snapshot();
+    assert.equal(s.status.get(base + 7), 'incorrect');
+    assert.ok(s.heardCorrect.has(base + 2) && !s.heardCorrect.has(base + 7));
+    t.override(base + 7, null);
+    s = t.snapshot();
+    assert.equal(s.status.has(base + 7), false);
+    assert.equal(s.findings.length, 0);
+    t.override(base + 2, 'incorrect');
+    s = t.snapshot();
+    assert.equal(s.status.get(base + 2), 'incorrect');
+    assert.ok(!s.heardCorrect.has(base + 2));
+    assert.equal(s.findings.length, 0, 'a manual mark is not offered again as a finding');
+  });
+
   it('detects an omitted word', () => {
     const t = tracker();
     const base = flatOf(20, 30);

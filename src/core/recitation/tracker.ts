@@ -154,6 +154,8 @@ export interface TrackerSnapshot {
   readonly location: { readonly ref: AyahRef; readonly position: number; readonly page: number | null } | null;
   readonly status: ReadonlyMap<number, WordStatus>;
   readonly findings: readonly Finding[];
+  /** Words clearly heard and recited correctly (not merely shown as correct). */
+  readonly heardCorrect: ReadonlySet<number>;
   readonly recitedWords: number;
   readonly selfCorrections: number;
 }
@@ -219,6 +221,24 @@ export class RecitationTracker {
     return [Math.min(from, base), Math.max(to, Math.min(size, base + 1))];
   }
 
+  /**
+   * The user's correction of one word: `null` clears any status and finding (the word looks
+   * untouched); a status replaces what the tracker decided. A manual status is never reported as
+   * a finding (the user already saved it) and is not overwritten by later recognition.
+   */
+  override(flat: number, status: WordStatus | null): void {
+    this.pending.delete(flat);
+    for (let i = this.found.length - 1; i >= 0; i--) {
+      const f = this.found[i];
+      if (f?.flat === flat) {
+        this.findingKeys.delete(f.key);
+        this.found.splice(i, 1);
+      }
+    }
+    if (status === null) this.status.delete(flat);
+    else this.status.set(flat, status);
+  }
+
   /** Confirms everything still pending (call when the session ends). */
   finish(): void {
     if (this.carryHyp.length && this.mode === 'focused') {
@@ -236,8 +256,10 @@ export class RecitationTracker {
     const w = at === null ? null : this.corpus.words[at];
     let recited = 0;
     const shown = new Map<number, WordStatus>();
+    const heardCorrect = new Set<number>();
     for (const [k, s] of this.status) {
       if (s !== 'skipped') recited++;
+      if (s === 'correct') heardCorrect.add(k);
       shown.set(k, s === 'pending' || s === 'uncertain' ? 'correct' : s);
     }
     return {
@@ -246,6 +268,7 @@ export class RecitationTracker {
       location: w && at !== null ? { ref: this.corpus.ref(at), position: w.position, page: this.corpus.pageAt(at) } : null,
       status: shown,
       findings: [...this.found],
+      heardCorrect,
       recitedWords: recited,
       selfCorrections: this.selfCorrections,
     };

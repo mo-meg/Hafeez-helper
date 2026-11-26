@@ -582,6 +582,15 @@ async function run() {
     marked.click();
     await waitFor(() => /Already marked/.test($('.toast-region')?.textContent ?? ''), 'already-marked toast');
     check((await store.mistakes.getAll()).length === before, `count unchanged (${(await store.mistakes.getAll()).length} vs ${before})`);
+    // Double tap: every mark on the word is cleared (saved record deleted).
+    const w2 = await waitFor(() => $$<HTMLButtonElement>('.quran button.w:not(.marked)').find((b) => b.dataset.p !== '1'), 'word to clear');
+    w2.click();
+    await waitFor(() => w2.classList.contains('marked'), 'tapped word marked');
+    check((await store.mistakes.getAll()).length === before + 1, 'single tap saved a mark');
+    w2.click();
+    w2.click();
+    await waitFor(() => /Marks cleared/.test($('.toast-region')?.textContent ?? ''), 'cleared toast');
+    check(!w2.classList.contains('marked') && (await store.mistakes.getAll()).length === before, 'double tap cleared the mark');
     // Ayah numbers do not open the options dialog in focus mode.
     $<HTMLButtonElement>('.quran .ayah-end')?.click();
     await sleep(30);
@@ -1054,13 +1063,11 @@ async function run() {
     app.autoScroll?.pause();
     app.autoScroll?.setSpeed(15);
     window.scrollTo(0, 0);
-  } else if (showcase === 'recite-voice' || showcase === 'recite-page') {
+  } else if (showcase === 'recite-voice') {
     // Screens only (no model in the harness): a session state is injected after the start fails for want of a key.
-    if (showcase === 'recite-voice') {
-      await go('#/quran?hizb=5');
-      window.scrollTo(0, 0);
-      AutoScrollSession.startVoice(app, { label: 'Hizb 5', next: null, prev: null });
-    } else await go('#/recite');
+    await go('#/quran?hizb=5');
+    window.scrollTo(0, 0);
+    AutoScrollSession.startVoice(app, { label: 'Hizb 5', next: null, prev: null });
     const l = ensureLive(app);
     if (l) {
       await waitFor(() => !l.preparing || null, 'start settles', 4000).catch(() => undefined);
@@ -1069,7 +1076,7 @@ async function run() {
       const status = new Map<number, WordStatus>();
       for (let k = from; k < from + 14; k++) status.set(k, k === from + 6 ? 'incorrect' : k === from + 10 ? 'skipped' : 'correct');
       l.state = { status: 'listening', error: null, silent: false, paused: false, heard: '', progress: null,
-        tracker: { mode: 'focused', cursor: from + 14, location: null, status, findings: [], recitedWords: 13, selfCorrections: 0 } };
+        tracker: { mode: 'focused', cursor: from + 14, location: null, status, findings: [], heardCorrect: new Set(), recitedWords: 13, selfCorrections: 0 } };
       l.preparing = false;
       for (const fn of l.listeners) fn();
     }

@@ -6,6 +6,7 @@ import { surahInfo } from '../../core/quran/surahs.ts';
 import type { AyahRef, DivisionKind, DivisionRange } from '../../core/quran/types.ts';
 import { DEFAULT_PREFERENCES } from '../../core/settings/preferences.ts';
 import { RECITE_ENABLED, type App } from '../app.ts';
+import { paintWordMark, wordMarkClasses, wordMarkState } from '../components/wordMark.ts';
 import { AutoScrollSession, type PortionInfo } from '../components/autoScroll.ts';
 import { openDialog } from '../components/dialog.ts';
 import { icon } from '../components/icons.ts';
@@ -173,7 +174,7 @@ function textBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMap
           'button',
           {
             type: 'button',
-            class: `w${m ? ' marked' : ''}${m && m.status === 'resolved' ? ' resolved' : ''}`,
+            class: `w${wordMarkClasses(wordMarkState(m))}`,
             dataset: { a: idx, p: t.position, key: `w-${idx}-${t.position}` },
             'aria-describedby': m ? 'marked-desc' : null,
           },
@@ -198,8 +199,9 @@ function textBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMap
     const el = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!el) return;
     if (app.autoScroll?.active) {
-      // Focus mode: a tap on a word records a mistake at once; ayah numbers are inert.
-      if (el.classList.contains('w')) void quickMark(app, el);
+      // Focus modes: one tap records a mistake, a double tap clears every mark on the word.
+      // Ayah numbers are inert.
+      if (el.classList.contains('w')) focusTap(app, el);
       return;
     }
     if (el.classList.contains('w')) {
@@ -216,10 +218,43 @@ function textBody(app: App, range: ViewRange, maps: ReturnType<typeof mistakeMap
   return container;
 }
 
+/** Two taps on the same word within this time are a double tap. */
+const DOUBLE_TAP_MS = 320;
+let pendingTap: { el: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
+
+/**
+ * Focus modes (auto scroll / Hafeez and reciting): the first tap waits briefly for a second one.
+ * Single tap = mark a mistake; double tap = back to plain text (saved mark deleted, recitation
+ * colour cleared) — a quick way to correct the user's or the tracker's wrong call.
+ */
+function focusTap(app: App, el: HTMLElement): void {
+  if (pendingTap?.el === el) {
+    clearTimeout(pendingTap.timer);
+    pendingTap = null;
+    void clearWord(app, el);
+    return;
+  }
+  if (pendingTap) {
+    // A tap on another word: the earlier one was a single tap.
+    clearTimeout(pendingTap.timer);
+    const prev = pendingTap.el;
+    pendingTap = null;
+    void quickMark(app, prev);
+  }
+  const timer = setTimeout(() => {
+    if (pendingTap?.el !== el) return;
+    pendingTap = null;
+    void quickMark(app, el);
+  }, DOUBLE_TAP_MS);
+  pendingTap = { el, timer };
+}
+
 /**
  * Auto-scroll mode: marks the tapped word without opening the dialog. The type follows the same
  * rule as the dialog's suggestion: first word of an ayah = linking ayat, otherwise forgotten word.
  * The word is updated in place (no re-render) so scrolling stays smooth; Undo is offered.
+ * An "improving" (yellow) word turns red again. While reciting, the tracker's colour for the
+ * word becomes a mistake too (so it is not counted as recited correctly).
  */
 async function quickMark(app: App, el: HTMLElement): Promise<void> {
   const idx = Number(el.dataset.a);
@@ -232,20 +267,16 @@ async function quickMark(app: App, el: HTMLElement): Promise<void> {
     return;
   }
   await app.act(async () => {
+    app.autoScroll?.correctWord(idx, position, 'incorrect');
     const existing = await app.s.mistakes.findByKey(ref, position);
-    if (existing && isUnresolved(existing.status)) {
+    if (existing && isUnresolved(existing.status) && existing.status !== 'improved') {
       app.toast(t('auto.alreadyMarked', { where }));
       return;
     }
+    const before = wordMarkState(existing);
     const category = existing?.category ?? suggestedCategory(position) ?? 'forgotten';
     const result = await app.s.mistakes.markWord(ref, { position, tokenText: el.textContent ?? '', edition }, { category });
-    const paint = (state: 'marked' | 'resolved' | 'none') => {
-      el.classList.toggle('marked', state !== 'none');
-      el.classList.toggle('resolved', state === 'resolved');
-      if (state === 'none') el.removeAttribute('aria-describedby');
-      else el.setAttribute('aria-describedby', 'marked-desc');
-    };
-    paint('marked');
+    paintWordMark(el, 'marked');
     el.classList.remove('just-marked');
     void el.offsetWidth; // restart the confirmation pulse
     el.classList.add('just-marked');
@@ -256,14 +287,32 @@ async function quickMark(app: App, el: HTMLElement): Promise<void> {
       run: () => void app.act(async () => {
         if (result.action === 'created') {
           await app.s.mistakes.deletePermanently(result.mistake.id);
-          paint('none');
-        } else {
-          await app.s.mistakes.resolve(result.mistake.id);
-          paint('resolved');
-        }
+          app.autoScroll?.correctWord(idx, position, null);
+        } else if (before === 'improving') await app.s.mistakes.setStatus(result.mistake.id, 'improved');
+        else await app.s.mistakes.resolve(result.mistake.id);
+        paintWordMark(el, before);
         await app.reloadData();
       }, t('auto.undone')),
     });
+  });
+}
+
+/** Double tap: removes every mark on the word (red, yellow or green) and its recitation colour. */
+async function clearWord(app: App, el: HTMLElement): Promise<void> {
+  const idx = Number(el.dataset.a);
+  const position = Number(el.dataset.p);
+  const ref = fromIndex(idx);
+  const where = t('mark.where', { ref: refLabel(ref), n: position });
+  await app.act(async () => {
+    app.autoScroll?.correctWord(idx, position, null);
+    el.classList.remove('just-marked');
+    const existing = await app.s.mistakes.findByKey(ref, position);
+    paintWordMark(el, 'none');
+    if (existing) {
+      await app.s.mistakes.deletePermanently(existing.id);
+      await app.reloadData();
+    }
+    app.toast(t('auto.cleared', { where }));
   });
 }
 
@@ -370,6 +419,7 @@ function legend(): HTMLElement {
     'div',
     { class: 'legend', role: 'note', 'aria-label': t('quran.legend') },
     h('span', null, h('span', { class: 'swatch marked', 'aria-hidden': 'true' }), t('quran.legendMarked')),
+    h('span', null, h('span', { class: 'swatch improving', 'aria-hidden': 'true' }), t('quran.legendImproving')),
     h('span', null, h('span', { class: 'swatch resolved', 'aria-hidden': 'true' }), t('quran.legendResolved')),
     h('span', null, h('span', { class: 'swatch ayah', 'aria-hidden': 'true' }), t('quran.legendAyah')),
   );

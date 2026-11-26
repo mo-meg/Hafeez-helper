@@ -27,7 +27,7 @@ const cloudDefine = {
 };
 const harness = args.has('--harness');
 
-const SHOWCASES = { '': 'harness', dashboard: '#/dashboard', wird: '#/wird', 'wird-week': '#/wird?tab=week', 'wird-plans': '#/wird?tab=plans&edit=new', 'wird-stats': '#/wird?tab=stats', quran: '#/quran?hizb=5', revision: '#/revision', mistakes: '#/mistakes', test: 'live-test', progress: '#/progress', settings: '#/settings', session: 'live-session', login: 'login-screen', autoscroll: 'auto-scroll', 'autoscroll-live': 'auto-scroll-live', hafeez: 'hafeez-mode', browser: 'quran-browser', write: 'live-write', 'recite-voice': 'recite-voice', 'recite-page': 'recite-page' };
+const SHOWCASES = { '': 'harness', dashboard: '#/dashboard', wird: '#/wird', 'wird-week': '#/wird?tab=week', 'wird-plans': '#/wird?tab=plans&edit=new', 'wird-stats': '#/wird?tab=stats', quran: '#/quran?hizb=5', revision: '#/revision', mistakes: '#/mistakes', test: 'live-test', progress: '#/progress', settings: '#/settings', session: 'live-session', login: 'login-screen', autoscroll: 'auto-scroll', 'autoscroll-live': 'auto-scroll-live', hafeez: 'hafeez-mode', browser: 'quran-browser', write: 'live-write', 'recite-voice': 'recite-voice' };
 /** Arabic (RTL) variants of the showcase screens. */
 const AR_SHOWCASES = ['dashboard', 'wird', 'wird-week', 'wird-plans', 'quran', 'revision', 'mistakes', 'test', 'progress', 'settings', 'session', 'login', 'autoscroll', 'hafeez', 'browser', 'write'];
 

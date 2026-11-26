@@ -23,12 +23,14 @@
  * Hiding the app chrome (FOCUS_CLASS) is enough.
  */
 import { clampSpeed, minutesLeft, pxPerSecond, SPEED_DEFAULT, SPEED_MAX, SPEED_MIN } from '../../core/reading/autoScroll.ts';
+import type { Mistake } from '../../core/model.ts';
 import type { WordStatus } from '../../core/recitation/tracker.ts';
 import type { App } from '../app.ts';
 import { h, replaceChildren } from '../dom.ts';
 import { fmtNum, t, tn } from '../i18n/index.ts';
 import { openDialog } from './dialog.ts';
 import { icon } from './icons.ts';
+import { paintWordMark, wordMarkState } from './wordMark.ts';
 import { ensureLive, isActive, startReciting, statusLabel, stopReciting, summaryPanel, togglePause, type RecitationLive } from './reciteSession.ts';
 
 const SPEED_KEY = 'autoScrollSpeed';
@@ -80,7 +82,12 @@ const FOLLOW_BAND: readonly [number, number] = [0.2, 0.55];
 const FOLLOW_AT = 0.38;
 /** After the reader scrolls by hand, following the voice waits this long. */
 const FOLLOW_IDLE_MS = 2500;
-const RS_CLASSES = ['rs-correct', 'rs-incorrect', 'rs-skipped', 'rs-hesitation'];
+const RS_CLASSES = ['rs-correct', 'rs-incorrect', 'rs-skipped', 'rs-hesitation', 'rs-cleared'];
+/**
+ * Reciting mode: a word heard correctly counts toward its saved mistake (red → yellow → green) once
+ * the reciter is this many words past it, so a late correction by the tracker is not counted.
+ */
+const SETTLE_WORDS = 6;
 
 /**
  * Hafeez (memorization) mode: the lower half of the screen shows only faint "ghost" words, so the
@@ -195,6 +202,11 @@ export class AutoScrollSession {
   private manualAt = 0;
   /** Reciting mode: a move to another portion is under way (wait for its render). */
   private advancing = false;
+  /** Reciting mode: words already counted as recited correctly in this session (flat indexes). */
+  private counted = new Set<number>();
+  /** Reciting mode: saved-mistake updates run one after another. */
+  private progressChain: Promise<void> = Promise.resolve();
+  private progressTally = { improved: 0, resolved: 0 };
 
   private constructor(app: App, speed: number, mode: ScrollMode = 'timed') {
     this.app = app;
@@ -405,6 +417,62 @@ export class AutoScrollSession {
 
   get active(): boolean {
     return !this.stopped;
+  }
+
+  /**
+   * The user corrected the tracker on one word (tap = mistake, double tap = `null`, plain text).
+   * No-op outside reciting mode or before listening started.
+   */
+  correctWord(ayahIndex: number, position: number, status: WordStatus | null): void {
+    const l = this.live;
+    if (this.mode !== 'voice' || !l?.controller) return;
+    const flat = l.corpus.ayahStart(ayahIndex) + position - 1;
+    if (l.corpus.words[flat]?.position !== position || l.corpus.words[flat]?.ayahIndex !== ayahIndex) return;
+    this.counted.add(flat); // the user's call wins over "recited correctly"
+    const el = this.wordEls.get(`${ayahIndex}:${position}`);
+    el?.classList.toggle('rs-cleared', status === null);
+    l.controller.overrideWord(flat, status);
+  }
+
+  /**
+   * Saved word mistakes the tracker heard recited correctly: red turns yellow, and green after
+   * correct recitation on CLEAN_DAYS_TO_RESOLVE distinct days (see MistakeService). `all` = the
+   * session ended, count every word; otherwise only words the reciter is well past.
+   */
+  private countCorrect(all: boolean): Promise<void> {
+    const l = this.live;
+    const st = l?.state;
+    if (!l || !st) return this.progressChain;
+    const cursor = st.tracker.cursor ?? -1;
+    const byWord = new Map<string, Mistake>();
+    for (const m of this.app.data.mistakes) if (m.word && m.status !== 'resolved') byWord.set(`${m.globalIndex}:${m.word.position}`, m);
+    const due: { flat: number; m: Mistake; key: string }[] = [];
+    for (const flat of st.tracker.heardCorrect) {
+      if (this.counted.has(flat) || (!all && flat > cursor - SETTLE_WORDS)) continue;
+      this.counted.add(flat);
+      const w = l.corpus.words[flat];
+      const key = w ? `${w.ayahIndex}:${w.position}` : '';
+      const m = byWord.get(key);
+      if (m) due.push({ flat, m, key });
+    }
+    if (!due.length) return this.progressChain;
+    const day = this.app.today();
+    this.progressChain = this.progressChain.then(async () => {
+      try {
+        for (const { m, key } of due) {
+          const u = await this.app.s.mistakes.recordCleanRecitation(m.id, day);
+          if (!u) continue;
+          if (u.status === 'resolved') this.progressTally.resolved++;
+          else this.progressTally.improved++;
+          const el = this.wordEls.get(key);
+          if (el) paintWordMark(el, wordMarkState(u));
+        }
+        await this.app.reloadData();
+      } catch (e) {
+        console.warn('Recitation: could not update a mistake', e);
+      }
+    });
+    return this.progressChain;
   }
 
   toggle(): void {
@@ -822,6 +890,7 @@ export class AutoScrollSession {
     for (const [el, cls] of this.painted) if (want.get(el) !== cls) el.classList.remove(cls);
     for (const [el, cls] of want) if (this.painted.get(el) !== cls) el.classList.add(cls);
     this.painted = want;
+    void this.countCorrect(false);
     const cursor = st.tracker.cursor;
     const at = cursor === null ? null : words[Math.min(cursor, words.length - 1)];
     const cur = at ? this.wordEls.get(`${at.ayahIndex}:${at.position}`) ?? null : null;
@@ -865,7 +934,10 @@ export class AutoScrollSession {
     if (!l) return;
     l.listeners.delete(this.onLive);
     const app = this.app;
-    void stopReciting(l).then(() => {
+    void stopReciting(l).then(async () => {
+      await this.countCorrect(true);
+      const { improved, resolved } = this.progressTally;
+      if (improved || resolved) app.toast(t('voice.progress', { improved: fmtNum(improved), resolved: fmtNum(resolved) }));
       const st = l.state;
       if (!st || st.status === 'idle' || (!st.tracker.recitedWords && !st.tracker.findings.length)) return;
       const box = h('div');

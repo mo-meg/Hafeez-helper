@@ -254,6 +254,7 @@ th { color: var(--mist); font-weight: 600; font-size: 0.82rem; }
 .legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; align-items: center; font-size: 0.85rem; color: var(--mist); margin: 0 auto 0.75rem; max-width: 46rem; }
 .legend .swatch { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; vertical-align: -0.12em; margin-inline-end: 0.35rem; }
 .legend .swatch.marked { background: var(--mistake-soft); border-bottom: 2px solid var(--mistake); }
+.legend .swatch.improving { background: var(--amber-soft); border-bottom: 2px solid var(--amber); }
 .legend .swatch.resolved { background: var(--sage-soft); border-bottom: 2px solid var(--sage); }
 .legend .swatch.ayah { border-radius: 50%; background: var(--mistake); }
 /* The mushaf page is the visual centre of the app: a framed sheet with a fine gilt inner rule. */
@@ -301,7 +302,10 @@ th { color: var(--mist); font-weight: 600; font-size: 0.82rem; }
   color: var(--mistake); background: var(--mistake-soft);
   text-decoration: underline 0.14em var(--mistake); text-underline-offset: 0.42em; text-decoration-skip-ink: none;
 }
+.w.marked.improving { color: var(--amber); background: var(--amber-soft); text-decoration-color: var(--amber); }
 .w.marked.resolved { color: var(--sage); background: var(--sage-soft); text-decoration-color: var(--sage); }
+/* Focus modes: a double tap clears a word's marks, so it must not zoom the page. */
+body.focus-reading .quran .w { touch-action: manipulation; }
 .w.focus { outline: 2px solid var(--accent); }
 .pause-mark { color: var(--gilt); font-size: 0.85em; }
 .ayah-end {
@@ -551,6 +555,7 @@ body.focus-reading.hafeez-hide main { padding-bottom: calc(50vh + 5rem + env(saf
 }
 .w.revealed { color: var(--accent); cursor: default; }
 .w.revealed.marked { color: var(--mistake); }
+.w.revealed.marked.improving { color: var(--amber); }
 .w.revealed.marked.resolved { color: var(--sage); }
 .test-card span.w { cursor: default; }
 
@@ -609,50 +614,16 @@ body.focus-reading.hafeez-hide main { padding-bottom: calc(50vh + 5rem + env(saf
 .sync-dot[data-state='offline'] { background: var(--amber); }
 .sync-dot[data-state='error'] { background: var(--mistake); }
 
-/* ---------------------------------------------------------------- recitation tracker */
-.recite { display: grid; gap: 1rem; max-width: 46rem; margin-inline: auto; width: 100%; }
-/* Only a mic button and two quiet tools: the Quran text is the page. */
-.rec-bar { display: flex; align-items: center; gap: 0.75rem; }
-button.rec-main {
-  position: relative; min-height: 3.25rem; padding: 0.55rem 1.4rem 0.55rem 1.1rem; border-radius: 999px; font-size: 1.05rem; font-weight: 600;
-  background: var(--accent); color: var(--accent-ink); border-color: var(--accent); gap: 0.55rem;
-}
-button.rec-main:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--accent-ink); }
-button.rec-main svg { width: 1.35rem; height: 1.35rem; }
-button.rec-main.stop { background: var(--mistake); border-color: var(--mistake); color: #fff; }
-button.rec-main.stop svg { width: 1rem; height: 1rem; fill: currentColor; }
-button.rec-main.stop.is-busy { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-button.rec-main.stop.is-busy svg { width: 1.35rem; height: 1.35rem; fill: none; }
+/* ---------------------------------------------------------------- reciting focus mode */
 /* Loading: a ring turns around the button. Listening: the button pulses softly. */
-button.rec-main.is-busy::after, .autoscroll-bar [data-key='as-toggle'].is-busy::after {
+.autoscroll-bar [data-key='as-toggle'].is-busy::after {
   content: ''; position: absolute; inset: -5px; border-radius: inherit; pointer-events: none;
   border: 2.5px solid transparent; border-top-color: var(--gilt); border-inline-end-color: var(--gilt); animation: rec-spin 1s linear infinite;
 }
 .autoscroll-bar [data-key='as-toggle'] { position: relative; }
-button.rec-main.is-live, .autoscroll-bar [data-key='as-toggle'].is-live { animation: rec-pulse-ring 1.6s ease-out infinite; }
+.autoscroll-bar [data-key='as-toggle'].is-live { animation: rec-pulse-ring 1.6s ease-out infinite; }
 @keyframes rec-spin { to { transform: rotate(360deg); } }
 @keyframes rec-pulse-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mistake) 45%, transparent); } 100% { box-shadow: 0 0 0 0.75rem transparent; } }
-.rec-tools { display: flex; gap: 0.25rem; margin-inline-start: auto; }
-.rec-tools button { color: var(--mist); }
-.rec-tools button[aria-pressed='true'] { color: var(--accent); background: var(--accent-soft); }
-.rec-tools svg { width: 1.15rem; height: 1.15rem; }
-/* Placeholder before the first words are located. */
-.rec-empty {
-  display: grid; justify-items: center; gap: 0.6rem; text-align: center; color: var(--mist);
-  padding: 3rem 1.5rem; border: 1.5px dashed var(--line); border-radius: var(--radius-l);
-}
-.rec-empty p { margin: 0; max-width: 26rem; }
-.rec-empty-icon { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
-.rec-empty-icon svg { width: 1.6rem; height: 1.6rem; }
-.recite .mushaf { width: 100%; box-sizing: border-box; }
-.rw { border-radius: 4px; padding: 0 0.04em; transition: background-color 0.2s, color 0.2s; }
-.rw.cur { box-shadow: inset 0 -0.14em 0 var(--accent); background: var(--accent-soft); }
-.rw.st-correct { color: var(--sage); }
-.rw.st-incorrect { background: var(--mistake-soft); color: var(--mistake); }
-.rw.st-skipped { background: var(--mistake-soft); text-decoration: line-through 0.08em var(--mistake); }
-.rw.st-hesitation { background: var(--amber-soft); text-decoration: underline dotted 0.1em var(--amber); text-underline-offset: 0.4em; }
-.rw.veiled { color: transparent; background: var(--sunken); border-radius: 4px; user-select: none; }
-.rec-end { cursor: default; }
 .rec-summary h2 { margin-top: 0; }
 .rec-notice { margin: 0.75rem 0 0; font-size: 0.78rem; color: var(--mist); border-top: 1px solid var(--line); padding-top: 0.6rem; }
 .rec-findings { list-style: none; padding: 0; margin: 0.75rem 0 1rem; display: grid; gap: 0.35rem; }
@@ -670,13 +641,13 @@ body:has(.dock:not([hidden])) .recite-fab { bottom: 9.75rem; }
 }
 .recite-fab:disabled { opacity: 0.45; }
 body.reciting .quran .w { transition: color 0.2s, background-color 0.2s; }
-body.reciting .quran .w.rs-correct { color: var(--sage); }
+body.reciting .quran .w.rs-correct:not(.marked) { color: var(--sage); }
 body.reciting .quran .w.rs-incorrect { background: var(--mistake-soft); color: var(--mistake); }
 body.reciting .quran .w.rs-skipped { background: var(--mistake-soft); text-decoration: line-through 0.08em var(--mistake); }
 body.reciting .quran .w.rs-hesitation { background: var(--amber-soft); }
 body.reciting .quran .w.rs-cur { box-shadow: inset 0 -0.14em 0 var(--accent); }
 /* Reciting with Hafeez on: every word not yet recited is a ghost; it appears once it is heard. */
-body.reciting.hafeez-all .quran .w:not(.rs-correct):not(.rs-incorrect):not(.rs-skipped):not(.rs-hesitation),
+body.reciting.hafeez-all .quran .w:not(.rs-correct):not(.rs-cleared):not(.rs-incorrect):not(.rs-skipped):not(.rs-hesitation),
 body.reciting.hafeez-all .quran .pause-mark {
   color: color-mix(in srgb, var(--ink) var(--hafeez-ghost, 7%), transparent); background: none;
   text-decoration-color: transparent; pointer-events: none;

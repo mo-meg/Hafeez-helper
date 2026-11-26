@@ -41,6 +41,7 @@ const MistakeSchema = z
     successStreak: z.number().int().min(0),
     lastStreakSessionId: z.string().nullable(),
     reopenCount: z.number().int().min(0),
+    cleanDays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
     schedule: z.object({
       intervalDays: z.number().min(0),
       nextReviewAt: iso.nullable(),
