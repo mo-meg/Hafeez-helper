@@ -15,12 +15,26 @@ export interface RecitationState {
   readonly silent: boolean;
   /** Paused by the user: audio is ignored, the session continues on resume. */
   readonly paused: boolean;
+  /** The pause was automatic (nothing recited for RecitationTiming.autoPauseMs). */
+  readonly autoPaused: boolean;
   /** What the model heard in the current take, in its own sound notation (display only — never Quran text). */
   readonly heard: string;
   /** Model download progress while loading (first use only). */
   readonly progress: LoadProgress | null;
   readonly tracker: TrackerSnapshot;
 }
+
+/** Timers that act on the reciter's silence (ms of fed audio; 0 = off). */
+export interface RecitationTiming {
+  /** Stuck before the next word this long (and quiet for at least a second): show it, record it as forgotten. */
+  readonly promptMs: number;
+  /** Nothing recited this long: pause listening (the model stops working until resumed). */
+  readonly autoPauseMs: number;
+}
+
+export const DEFAULT_TIMING: RecitationTiming = { promptMs: 3000, autoPauseMs: 30000 };
+/** The prompt never fires while the reciter is audibly saying something (shorter than this quiet). */
+const PROMPT_QUIET_MS = 1000;
 
 /** One segmenter per corpus (it indexes the whole text once). */
 const segmenters = new WeakMap<RecitationCorpus, UnitSegmenter>();
@@ -58,7 +72,13 @@ export class RecitationController {
   private error: RecitationState['error'] = null;
   private silent = true;
   private paused = false;
+  private autoPaused = false;
   private heard = '';
+  private readonly timing: RecitationTiming;
+  /** Fed-audio time of the last move of the tracker's cursor / of the last chunk with speech. */
+  private lastMoveMs = 0;
+  private lastSpeechMs = 0;
+  private lastCursor: number | null = null;
   private progress: LoadProgress | null = null;
   private ctx: TakeCtx | null = null;
   private fedMs = 0;
@@ -66,7 +86,8 @@ export class RecitationController {
   private closing: Promise<void>[] = [];
   private readonly segmenter: UnitSegmenter;
 
-  constructor(deps: { engine: RecitationEngine; tracker: RecitationTracker; onUpdate: (s: RecitationState) => void; segmenter?: UnitSegmenter }) {
+  constructor(deps: { engine: RecitationEngine; tracker: RecitationTracker; onUpdate: (s: RecitationState) => void; segmenter?: UnitSegmenter; timing?: Partial<RecitationTiming> }) {
+    this.timing = { ...DEFAULT_TIMING, ...deps.timing };
     this.engine = deps.engine;
     this.tracker = deps.tracker;
     this.onUpdate = deps.onUpdate;
@@ -74,7 +95,7 @@ export class RecitationController {
   }
 
   state(): RecitationState {
-    return { status: this.status, error: this.error, silent: this.silent, paused: this.paused, heard: this.heard, progress: this.progress, tracker: this.tracker.snapshot() };
+    return { status: this.status, error: this.error, silent: this.silent, paused: this.paused, autoPaused: this.autoPaused, heard: this.heard, progress: this.progress, tracker: this.tracker.snapshot() };
   }
 
   async start(): Promise<boolean> {
@@ -90,6 +111,7 @@ export class RecitationController {
       return false;
     }
     this.progress = null;
+    this.resetSilence();
     this.openTake();
     this.set('listening');
     return true;
@@ -106,6 +128,26 @@ export class RecitationController {
     if (this.status !== 'listening' || this.paused || !this.ctx?.take) return;
     this.ctx.take.push(pcm16k);
     this.fedMs += (pcm16k.length * 1000) / MODEL_RATE;
+    this.watchSilence();
+  }
+
+  /** Stuck before a word → show it as forgotten; silent for long → pause. Driven by fed audio time. */
+  private watchSilence(): void {
+    const { promptMs, autoPauseMs } = this.timing;
+    const now = this.fedMs;
+    if (promptMs > 0 && this.tracker.mode === 'focused' && now - this.lastMoveMs >= promptMs && now - this.lastSpeechMs >= Math.min(promptMs, PROMPT_QUIET_MS)) {
+      if (this.tracker.prompt(now) !== null) this.emit();
+    }
+    if (autoPauseMs > 0 && now - Math.max(this.lastMoveMs, this.lastSpeechMs) >= autoPauseMs) {
+      this.autoPaused = true;
+      this.pause();
+    }
+  }
+
+  /** Restarts the silence timers (start, resume). */
+  private resetSilence(): void {
+    this.lastMoveMs = this.fedMs;
+    this.lastSpeechMs = this.fedMs;
   }
 
   /** Pauses listening; the current take is closed so nothing is half-recognised. */
@@ -120,6 +162,8 @@ export class RecitationController {
   resume(): void {
     if (!this.paused) return;
     this.paused = false;
+    this.autoPaused = false;
+    this.resetSilence();
     if (this.status === 'listening' && !this.ctx) this.openTake();
     this.emit();
   }
@@ -173,7 +217,10 @@ export class RecitationController {
 
   private onTakeUpdate(ctx: TakeCtx, u: HeardUpdate): void {
     if (u.text.trim()) this.heard = u.text.trim();
-    if (ctx === this.ctx) this.silent = !u.speech;
+    if (ctx === this.ctx) {
+      this.silent = !u.speech;
+      if (u.speech) this.lastSpeechMs = this.fedMs;
+    }
     const settled = u.final ? u.units.length : Math.min(u.settledUnits, u.units.length);
     let words: HypWord[] = [];
     let anchor: number | undefined;
@@ -194,6 +241,10 @@ export class RecitationController {
     } else if (u.final) {
       const at = this.lastEndMs ?? ctx.offsetMs;
       this.tracker.push({ words: [], startMs: at, endMs: at, silenceBeforeMs: 0 });
+    }
+    if (this.tracker.cursor !== this.lastCursor) {
+      this.lastCursor = this.tracker.cursor;
+      this.lastMoveMs = this.fedMs;
     }
     this.emit();
   }

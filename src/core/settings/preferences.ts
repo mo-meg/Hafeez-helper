@@ -80,7 +80,14 @@ export const PreferencesSchema = z.object({
   recitationSensitivity: z.enum(['lenient', 'normal', 'strict']),
   /** Recognition chunks: 'fast' 160 ms (hadr) or 'accurate' 320 ms (the model's default). */
   recitationSpeed: z.enum(['fast', 'accurate']),
+  /** Reciting: seconds stuck before the next word is shown and recorded as forgotten (0 = never). */
+  recitationPromptSec: z.number().int().min(0).max(30),
+  /** Reciting: seconds without recitation before listening pauses by itself (0 = never). */
+  recitationAutoPauseSec: z.number().int().min(0).max(600),
 });
+
+export const RECITATION_PROMPT_CHOICES = [0, 2, 3, 4, 5, 7, 10] as const;
+export const RECITATION_AUTOPAUSE_CHOICES = [0, 15, 30, 60, 120, 300] as const;
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
 
@@ -117,6 +124,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recitationCheck: 'memorization',
   recitationSensitivity: 'normal',
   recitationSpeed: 'fast',
+  recitationPromptSec: 3,
+  recitationAutoPauseSec: 30,
 };
 
 /** Merges stored (possibly older/partial) preferences onto defaults; invalid fields fall back. */

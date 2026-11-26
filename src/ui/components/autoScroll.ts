@@ -28,6 +28,8 @@ import type { WordStatus } from '../../core/recitation/tracker.ts';
 import type { App } from '../app.ts';
 import { h, replaceChildren } from '../dom.ts';
 import { fmtNum, t, tn } from '../i18n/index.ts';
+import { divisionLabel, surahName } from '../i18n/labels.ts';
+import { fromIndex } from '../../core/quran/refs.ts';
 import { openDialog } from './dialog.ts';
 import { icon } from './icons.ts';
 import { paintWordMark, wordMarkState } from './wordMark.ts';
@@ -82,7 +84,7 @@ const FOLLOW_BAND: readonly [number, number] = [0.2, 0.55];
 const FOLLOW_AT = 0.38;
 /** After the reader scrolls by hand, following the voice waits this long. */
 const FOLLOW_IDLE_MS = 2500;
-const RS_CLASSES = ['rs-correct', 'rs-incorrect', 'rs-skipped', 'rs-hesitation', 'rs-cleared'];
+const RS_CLASSES = ['rs-correct', 'rs-incorrect', 'rs-skipped', 'rs-hesitation', 'rs-forgotten', 'rs-cleared'];
 /**
  * Reciting mode: a word heard correctly counts toward its saved mistake (red → yellow → green) once
  * the reciter is this many words past it, so a late correction by the tracker is not counted.
@@ -122,6 +124,9 @@ export class AutoScrollSession {
   private readonly app: App;
   private readonly bar: HTMLElement;
   private readonly status: HTMLElement;
+  /** Surah · Juz · Hizb of the text being read or recited, above the status. */
+  private readonly where: HTMLElement;
+  private whereIdx = -1;
   private readonly toggleBtn: HTMLButtonElement;
   private portion: PortionInfo | null = null;
   private glide: Glide | null = null;
@@ -207,12 +212,15 @@ export class AutoScrollSession {
   /** Reciting mode: saved-mistake updates run one after another. */
   private progressChain: Promise<void> = Promise.resolve();
   private progressTally = { improved: 0, resolved: 0 };
+  private autoPauseShown = false;
 
   private constructor(app: App, speed: number, mode: ScrollMode = 'timed') {
     this.app = app;
     this.mode = mode;
     this.speed = clampSpeed(speed);
     this.status = h('span', { class: 'as-status', 'aria-live': 'off' });
+    this.where = h('span', { class: 'as-where', 'data-key': 'as-where' });
+    const mid = h('div', { class: 'as-mid' }, this.where, this.status);
     this.hafeezBtn = h('button', { type: 'button', class: 'icon', 'data-key': 'as-hafeez', onclick: () => this.cycleHafeez() });
     this.toggleBtn = h('button', { type: 'button', class: 'icon', 'data-key': 'as-toggle', onclick: () => this.toggle() });
     const btn = (key: string, label: string, ic: string, fn: () => void) =>
@@ -223,7 +231,7 @@ export class AutoScrollSession {
         { class: 'autoscroll-bar voice', role: 'toolbar', 'aria-label': t('voice.bar') },
         this.toggleBtn,
         btn('as-prev', t('voice.prev'), 'prev', () => this.stepPortion(-1)),
-        this.status,
+        mid,
         btn('as-next', t('voice.next'), 'next', () => this.stepPortion(1)),
         this.hafeezBtn,
         btn('as-close', t('voice.close'), 'close', () => this.stop()),
@@ -234,7 +242,7 @@ export class AutoScrollSession {
         this.toggleBtn,
         btn('as-back', t('auto.back'), 'rewind', () => this.back()),
         btn('as-slower', t('auto.slower'), 'minus', () => this.setSpeed(this.speed - 1)),
-        this.status,
+        mid,
         btn('as-faster', t('auto.faster'), 'plus', () => this.setSpeed(this.speed + 1)),
         this.hafeezBtn,
         btn('as-close', t('auto.close'), 'close', () => this.stop()),
@@ -271,6 +279,10 @@ export class AutoScrollSession {
     session.collectWords();
     l.listeners.add(session.onLive);
     session.render();
+    // Before the place is found (or after a manual scroll) the location follows the screen.
+    session.statusTimer = setInterval(() => {
+      if (session.live?.state?.tracker.cursor == null) session.renderWhere(null);
+    }, STATUS_MS);
     session.toggleBtn.focus({ preventScroll: true });
     void app.s.store.settings.get<HafeezMode>(VOICE_HAFEEZ_KEY).then((v) => {
       if (v === 'all' && !session.stopped && session.hafeez === 'off') session.setHafeez('all', false);
@@ -818,8 +830,33 @@ export class AutoScrollSession {
     this.renderStatus();
   }
 
+  /** Shows Surah · Juz · Hizb for an ayah (global index); null = the ayah at the reading line. */
+  private renderWhere(idx: number | null): void {
+    let at = idx;
+    if (at === null) {
+      const y = window.innerHeight * (this.hafeez === 'off' ? 0.3 : 0.45);
+      for (const dy of [0, -40, 40, -90]) {
+        const el = document.elementFromPoint(window.innerWidth / 2, y + dy)?.closest<HTMLElement>('.quran [data-idx], .ref-only [data-idx]');
+        if (el) {
+          at = Number(el.dataset.idx);
+          break;
+        }
+      }
+    }
+    if (at === null || !Number.isFinite(at) || at === this.whereIdx) return;
+    this.whereIdx = at;
+    const index = this.app.quran.index;
+    const parts = [surahName(fromIndex(at).surah)];
+    const juz = index.numberAt('juz', at);
+    const hizb = index.numberAt('hizb', at);
+    if (juz !== null) parts.push(divisionLabel('juz', juz));
+    if (hizb !== null) parts.push(divisionLabel('hizb', hizb));
+    this.where.textContent = parts.join(' · ');
+  }
+
   private renderStatus(): void {
     if (this.mode === 'voice') return;
+    this.renderWhere(null);
     const mins = minutesLeft(this.remainingPx(), pxPerSecond(this.speed, this.app.prefs.fontScale));
     const time = tn('auto.minutes', mins);
     // Long form ("26 minutes | 15") and a compact one for narrow phones; CSS shows one of them.
@@ -858,6 +895,9 @@ export class AutoScrollSession {
       if (b) b.disabled = disabled;
     }
     this.status.textContent = l ? statusLabel(l) : '';
+    const c = st?.tracker.cursor;
+    const w = c === null || c === undefined || !l ? undefined : l.corpus.words[Math.min(c, l.corpus.size - 1)];
+    this.renderWhere(w ? w.ayahIndex : null);
   }
 
   private stepPortion(dir: 1 | -1): void {
@@ -891,6 +931,8 @@ export class AutoScrollSession {
     for (const [el, cls] of want) if (this.painted.get(el) !== cls) el.classList.add(cls);
     this.painted = want;
     void this.countCorrect(false);
+    if (st.autoPaused && !this.autoPauseShown) this.app.toast(t('voice.autoPaused'));
+    this.autoPauseShown = st.autoPaused;
     const cursor = st.tracker.cursor;
     const at = cursor === null ? null : words[Math.min(cursor, words.length - 1)];
     const cur = at ? this.wordEls.get(`${at.ayahIndex}:${at.position}`) ?? null : null;

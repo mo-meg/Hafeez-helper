@@ -483,7 +483,10 @@ body:has(.dock:not([hidden])) .autoscroll-fab { bottom: 5.5rem; }
 .autoscroll-bar button.icon:disabled { opacity: 0.4; }
 .autoscroll-bar svg { width: 1.7rem; height: 1.7rem; stroke-width: 2.2; }
 .autoscroll-bar [data-key='as-toggle'] svg, .autoscroll-bar [data-key='as-back'] svg { fill: currentColor; }
-.as-status { flex: 1; text-align: center; font-size: 1.1rem; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-mid { flex: 1; min-width: 0; display: grid; justify-items: center; line-height: 1.2; }
+.as-where { font-size: 0.8rem; opacity: 0.9; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-where:empty { display: none; }
+.as-status { max-width: 100%; text-align: center; font-size: 1.1rem; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .autoscroll-bar.paused .as-status { opacity: 0.85; }
 .as-short { display: none; }
 @media (max-width: 520px) {
@@ -491,6 +494,7 @@ body:has(.dock:not([hidden])) .autoscroll-fab { bottom: 5.5rem; }
   .autoscroll-bar button.icon { width: 2.55rem; height: 2.75rem; }
   .autoscroll-bar svg { width: 1.5rem; height: 1.5rem; }
   .as-status { font-size: 0.98rem; }
+  .as-where { font-size: 0.72rem; }
   .as-long { display: none; }
   .as-short { display: inline; }
 }
@@ -630,7 +634,7 @@ body.focus-reading.hafeez-hide main { padding-bottom: calc(50vh + 5rem + env(saf
 .rec-findings li label { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; padding: 0.45rem 0.6rem; border-radius: var(--radius-m); background: var(--paper); font-weight: 400; cursor: pointer; }
 .rec-findings li label:hover { background: var(--sunken); }
 .rec-token { font-family: var(--quran-font); font-size: 1.2rem; }
-.rec-kind-incorrect, .rec-kind-skipped { background: var(--mistake-soft); color: var(--mistake); }
+.rec-kind-incorrect, .rec-kind-skipped, .rec-kind-forgotten { background: var(--mistake-soft); color: var(--mistake); }
 .rec-kind-hesitation { background: var(--amber-soft); color: var(--amber); }
 /* Reciting focus mode (Quran section): words coloured in place as they are recited. */
 .recite-fab { bottom: 5.75rem; }
@@ -645,9 +649,11 @@ body.reciting .quran .w.rs-correct:not(.marked) { color: var(--sage); }
 body.reciting .quran .w.rs-incorrect { background: var(--mistake-soft); color: var(--mistake); }
 body.reciting .quran .w.rs-skipped { background: var(--mistake-soft); text-decoration: line-through 0.08em var(--mistake); }
 body.reciting .quran .w.rs-hesitation { background: var(--amber-soft); }
+/* Stuck before this word: it was shown and counted as forgotten. */
+body.reciting .quran .w.rs-forgotten { background: var(--mistake-soft); color: var(--mistake); box-shadow: inset 0 -0.14em 0 var(--mistake); }
 body.reciting .quran .w.rs-cur { box-shadow: inset 0 -0.14em 0 var(--accent); }
 /* Reciting with Hafeez on: every word not yet recited is a ghost; it appears once it is heard. */
-body.reciting.hafeez-all .quran .w:not(.rs-correct):not(.rs-cleared):not(.rs-incorrect):not(.rs-skipped):not(.rs-hesitation),
+body.reciting.hafeez-all .quran .w:not(.rs-correct):not(.rs-cleared):not(.rs-incorrect):not(.rs-skipped):not(.rs-hesitation):not(.rs-forgotten),
 body.reciting.hafeez-all .quran .pause-mark {
   color: color-mix(in srgb, var(--ink) var(--hafeez-ghost, 7%), transparent); background: none;
   text-decoration-color: transparent; pointer-events: none;

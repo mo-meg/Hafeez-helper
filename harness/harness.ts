@@ -167,15 +167,14 @@ async function run() {
     await go('#/quran?hizb=5');
   });
 
-  await step('Quran browser: arrow opens last read, quick links and surah/page/juz/hizb lists', async () => {
+  await step('Quran browser: arrow opens last read and surah/page/juz/hizb lists, no quick links', async () => {
     await go('#/quran?hizb=5');
     check(!$('.navigator'), 'old navigator panel removed');
     const toggle = await waitFor(() => $<HTMLButtonElement>('[data-key="qb-toggle"]'), 'browser arrow');
     check(toggle.getAttribute('aria-expanded') === 'false' && ($('#qb-panel') as HTMLElement).hidden, 'closed by default');
     toggle.click();
     const panel = await waitFor(() => (($('#qb-panel') as HTMLElement | null)?.hidden === false ? $('#qb-panel') : null), 'panel open');
-    check(byText('.qb-section-title', 'Last read', panel) && byText('.qb-section-title', 'Quick links', panel), 'last read and quick links sections');
-    check($$('.qb-chip[data-key^="qb-quick-"]', panel).length === 6, 'six quick links');
+    check(byText('.qb-section-title', 'Last read', panel) && !byText('.qb-section-title', 'Quick links', panel), 'last read section, no quick links');
     check($$('.qb-tab', panel).map((b) => b.textContent).join(',') === 'Surah,Page,Juz,Hizb', 'tabs in order');
     check($('[data-key="qb-tab-hizb"]', panel)?.getAttribute('aria-selected') === 'true', 'hizb tab preselected for a hizb');
     check($$('.qb-row', panel).length === 60, '60 hizb rows');
@@ -522,6 +521,8 @@ async function run() {
     check(/^\d+ min \| \d+$/.test($('.as-short', status)?.textContent ?? ''), 'compact status for narrow phones');
     const shownStatus = [...status.children].filter((c) => getComputedStyle(c).display !== 'none');
     check(shownStatus.length === 1, 'exactly one status form is visible');
+    const where = await waitFor(() => ($('[data-key="as-where"]', bar)?.textContent ?? '') || null, 'surah/juz/hizb in the bar');
+    check(/Al-Baqarah|Al-Imran|Āl/.test(where) && /Juz \d+/.test(where) && /Hizb \d+/.test(where), `location in the bar "${where}"`);
     const app0 = app.autoScroll;
     check(app0?.active, 'session registered on the app');
     // The text keeps its width (no re-wrap) and the reading place is kept when the chrome hides.
@@ -1074,9 +1075,9 @@ async function run() {
       document.querySelector('.toast-region')?.replaceChildren();
       const from = l.corpus.ayahStart(256);
       const status = new Map<number, WordStatus>();
-      for (let k = from; k < from + 14; k++) status.set(k, k === from + 6 ? 'incorrect' : k === from + 10 ? 'skipped' : 'correct');
-      l.state = { status: 'listening', error: null, silent: false, paused: false, heard: '', progress: null,
-        tracker: { mode: 'focused', cursor: from + 14, location: null, status, findings: [], heardCorrect: new Set(), recitedWords: 13, selfCorrections: 0 } };
+      for (let k = from; k < from + 14; k++) status.set(k, k === from + 6 ? 'incorrect' : k === from + 10 ? 'skipped' : k === from + 13 ? 'forgotten' : 'correct');
+      l.state = { status: 'listening', error: null, silent: false, paused: false, autoPaused: false, heard: '', progress: null,
+        tracker: { mode: 'focused', cursor: from + 13, location: null, status, findings: [], heardCorrect: new Set(), recitedWords: 13, selfCorrections: 0 } };
       l.preparing = false;
       for (const fn of l.listeners) fn();
     }

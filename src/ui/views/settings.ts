@@ -5,13 +5,13 @@ import { removeDemoData, seedDemoData } from '../../core/demo.ts';
 import { ANCHOR_SOURCES } from '../../core/quran/anchors.ts';
 
 import { REPEAT_LIMITS, type CueKind } from '../../core/playlist/sequence.ts';
-import { CUE_SOUNDS, MISTAKE_CUE_SOUNDS, type CueSound, type Preferences } from '../../core/settings/preferences.ts';
+import { CUE_SOUNDS, MISTAKE_CUE_SOUNDS, RECITATION_AUTOPAUSE_CHOICES, RECITATION_PROMPT_CHOICES, type CueSound, type Preferences } from '../../core/settings/preferences.ts';
 import { exportBackup, parseBackup, restoreBackup, wipePersonalData } from '../../core/storage/backup.ts';
 import { RECITE_ENABLED, type App } from '../app.ts';
 import { confirmDialog } from '../components/dialog.ts';
 import { icon } from '../components/icons.ts';
 import { formatDateTime, h } from '../dom.ts';
-import { fmtNum, t, t as tr } from '../i18n/index.ts';
+import { fmtNum, t, t as tr, tn } from '../i18n/index.ts';
 import { kindName, LocalizedError, reciterAttribution, reciterName } from '../i18n/labels.ts';
 import { authErrorText } from '../auth/authView.ts';
 
@@ -399,9 +399,24 @@ function recitingSection(app: App): HTMLElement {
       h('legend', null, t('set.speedTitle')),
       speed('fast', t('set.speedFast'), t('set.speedFastHelp')),
       speed('accurate', t('set.speedAccurate'), t('set.speedAccurateHelp'))),
+    secondsSelect(app, 'recitationPromptSec', RECITATION_PROMPT_CHOICES, t('set.promptTitle'), t('set.promptHelp')),
+    secondsSelect(app, 'recitationAutoPauseSec', RECITATION_AUTOPAUSE_CHOICES, t('set.autoPauseTitle'), t('set.autoPauseHelp')),
     h('p', { class: 'muted' }, h('small', null, t('set.recApplyNext'))),
     h('p', { class: 'muted' }, h('small', null, t('rec.notice'))),
   );
+}
+
+/** A seconds choice for the reciting timers (0 = never). */
+function secondsSelect(app: App, key: 'recitationPromptSec' | 'recitationAutoPauseSec', choices: readonly number[], label: string, help: string): HTMLElement {
+  const fmt = (n: number) => (n === 0 ? t('set.never') : n >= 60 && n % 60 === 0 ? tn('auto.minutes', n / 60) : t('set.seconds', { n: fmtNum(n) }));
+  const id = `set-${key}`;
+  return h('label', { class: 'field' },
+    h('span', null, label),
+    h('select', {
+      'data-key': id,
+      onchange: (e: Event) => void app.act(() => app.savePrefs({ ...app.prefs, [key]: Number((e.target as HTMLSelectElement).value) }), t('set.checkSaved')),
+    }, choices.map((n) => h('option', { value: String(n), selected: app.prefs[key] === n }, fmt(n)))),
+    h('small', { class: 'muted' }, help));
 }
 
 function settingsNav(sections: {id:string, title:string}[]) {

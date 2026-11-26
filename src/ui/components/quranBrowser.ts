@@ -1,6 +1,6 @@
 /**
  * Quran browser: a bar at the top of the Quran section showing the portion on screen. Its arrow
- * opens a panel with the places read last, quick links and tabbed lists (surah, page, juz, hizb).
+ * opens a panel with the places read last and tabbed lists (surah, page, juz, hizb).
  * Each row shows where the portion starts and its first words; juz and hizb rows expand to their
  * quarters, surah rows to a "go to ayah" field.
  *
@@ -27,17 +27,6 @@ export interface BrowseCurrent {
   readonly endIndex: number;
   readonly label: string;
 }
-
-/** Surahs and ayat people often open directly. */
-type QuickKey = 'mulk' | 'kahf' | 'kursi' | 'yasin' | 'waqiah' | 'baqarahEnd';
-const QUICK_LINKS: ReadonlyArray<{ readonly key: QuickKey; readonly surah: number; readonly ayah?: number }> = [
-  { key: 'mulk', surah: 67 },
-  { key: 'kahf', surah: 18 },
-  { key: 'kursi', surah: 2, ayah: 255 },
-  { key: 'yasin', surah: 36 },
-  { key: 'waqiah', surah: 56 },
-  { key: 'baqarahEnd', surah: 2, ayah: 285 },
-];
 
 const state = {
   open: false,
@@ -144,8 +133,6 @@ export function quranBrowser(app: App, cur: BrowseCurrent): HTMLElement {
       h('div', { class: 'qb-chips' }, recent.length
         ? recent.map((r, i) => chip(refLabel(r), surahHash(r.surah, r.ayah), `qb-recent-${i}`))
         : h('span', { class: 'muted qb-empty' }, t('qb.noRecent'))),
-      h('div', { class: 'qb-section-title' }, t('qb.quickLinks')),
-      h('div', { class: 'qb-chips' }, QUICK_LINKS.map((q) => chip(t(`qb.quick.${q.key}`), surahHash(q.surah, q.ayah), `qb-quick-${q.key}`))),
       h('div', { class: 'qb-tools' }, tabsBar, h('label', { class: 'qb-search-wrap' }, icon('search'), search)),
       list,
     );
